@@ -38,6 +38,13 @@ android {
     }
 
     signingConfigs {
+        // Clé debug fixe (versionnée) : chaque APK de test peut s'installer par-dessus le précédent.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         create("release") {
             val keystore = System.getenv("RELEASE_KEYSTORE_PATH")
             if (keystore != null) {
