@@ -268,6 +268,35 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_sendUserMessage(
     return 0;
 }
 
+// Rejoue un message déjà échangé (reprise de la conversation au démarrage de l'app).
+// Un message de l'assistant est décodé comme s'il venait d'être généré : son texte puis le token de fin.
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_addHistoryMessage(
+        JNIEnv *env, jobject, jboolean from_user, jstring jtext) {
+    if (!g_context) return 1;
+    commit_assistant_message();
+    std::string text = to_string(env, jtext);
+    const bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
+
+    llama_tokens tokens;
+    if (from_user) {
+        if (has_template) text = chat_add_and_format(ROLE_USER, text);
+        tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
+    } else {
+        common_chat_msg msg;
+        msg.role = ROLE_ASSISTANT;
+        msg.content = text;
+        g_chat_msgs.push_back(msg);
+        tokens = common_tokenize(g_context, text, false, false);
+        const llama_vocab *vocab = llama_model_get_vocab(g_model);
+        llama_token end = llama_vocab_eot(vocab);
+        if (end == LLAMA_TOKEN_NULL) end = llama_vocab_eos(vocab);
+        if (end != LLAMA_TOKEN_NULL) tokens.push_back(end);
+    }
+    if ((int) tokens.size() > g_n_ctx / 2) tokens.resize(g_n_ctx / 2);
+    return decode_tokens(tokens, false) ? 2 : 0;
+}
+
 // Renvoie le morceau de texte suivant, "" si le token est incomplet (UTF-8), ou null quand c'est fini.
 JNIEXPORT jstring JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_nextToken(JNIEnv *env, jobject) {

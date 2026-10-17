@@ -21,6 +21,7 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             settings = state.settings,
             onChange = vm::updateSettings,
             onReasoningChange = vm::setReasoningMode,
+            onClearConversation = vm::clearConversation,
             onBack = { showSettings = false },
         )
         !state.modelDownloaded -> SetupScreen(
@@ -35,7 +36,6 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             state = state,
             onSend = vm::send,
             onStop = vm::stop,
-            onNewConversation = vm::newConversation,
             onReasoningChange = vm::setReasoningMode,
             onOpenSettings = { showSettings = true },
             onDismissError = vm::dismissError,

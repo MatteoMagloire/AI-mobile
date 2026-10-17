@@ -55,13 +55,25 @@ class LlamaEngine {
         else State.Failed("Impossible de charger le modèle (code $code)")
     }
 
-    suspend fun startConversation(systemPrompt: String, temperature: Float, topP: Float) =
-        withContext(llamaThread) {
-            check(_state.value is State.Ready) { "Aucun modèle chargé" }
-            LlamaNative.configureSampler(temperature, topP)
-            val code = LlamaNative.startConversation(systemPrompt)
-            check(code == 0) { "Échec du prompt système (code $code)" }
+    /**
+     * Prépare le modèle : prompt système puis messages déjà échangés ([history], du plus ancien
+     * au plus récent, `true` = message de l'utilisateur), pour reprendre la conversation.
+     */
+    suspend fun startConversation(
+        systemPrompt: String,
+        temperature: Float,
+        topP: Float,
+        history: List<Pair<Boolean, String>> = emptyList(),
+    ) = withContext(llamaThread) {
+        check(_state.value is State.Ready) { "Aucun modèle chargé" }
+        LlamaNative.configureSampler(temperature, topP)
+        val code = LlamaNative.startConversation(systemPrompt)
+        check(code == 0) { "Échec du prompt système (code $code)" }
+        for ((fromUser, text) in history) {
+            val c = LlamaNative.addHistoryMessage(fromUser, text)
+            check(c == 0) { "Échec de la reprise de la conversation (code $c)" }
         }
+    }
 
     suspend fun updateSampler(temperature: Float, topP: Float) = withContext(llamaThread) {
         if (_state.value is State.Ready) LlamaNative.configureSampler(temperature, topP)

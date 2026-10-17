@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.matteomagloire.aimobile.AiMobileApp
+import com.matteomagloire.aimobile.chat.ConversationStore
+import com.matteomagloire.aimobile.chat.HistoryWindow
 import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.llm.ThinkParser
 import com.matteomagloire.aimobile.model.ModelCatalog
@@ -68,6 +70,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val updates = UpdateStore(app)
     private val installer = UpdateInstaller(app)
     private val workManager = WorkManager.getInstance(app)
+    private val conversation = ConversationStore(app)
+    private var conversationLoaded: Job? = null
 
     private val _state = MutableStateFlow(ChatUiState())
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
@@ -77,6 +81,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private var dismissedUpdate: String? = null
 
     init {
+        conversationLoaded = viewModelScope.launch {
+            val saved = conversation.load()
+            _state.update { it.copy(messages = saved) }
+        }
         viewModelScope.launch {
             engine.state.collect { s -> _state.update { it.copy(engine = s) } }
         }
@@ -117,7 +125,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun selectModel(model: ModelInfo) {
         generation?.cancel()
         _state.update {
-            it.copy(activeModel = model, modelDownloaded = store.isDownloaded(model), messages = emptyList())
+            it.copy(activeModel = model, modelDownloaded = store.isDownloaded(model))
         }
         watchDownload(model)
         if (store.isDownloaded(model)) loadAndStart(model)
@@ -160,9 +168,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Prépare le modèle avec les derniers messages : la conversation continue là où elle s'était arrêtée. */
     private suspend fun startConversation() {
+        conversationLoaded?.join()
         val s = _state.value.settings
-        engine.startConversation(s.systemPrompt, s.temperature, s.topP)
+        val history = HistoryWindow.select(_state.value.messages).map { it.fromUser to it.text }
+        engine.startConversation(s.systemPrompt, s.temperature, s.topP, history)
+    }
+
+    private fun saveConversation() {
+        val messages = _state.value.messages
+        viewModelScope.launch { conversation.save(messages) }
     }
 
     fun downloadModel() {
@@ -179,6 +195,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 error = null,
             )
         }
+        saveConversation()
         generation = viewModelScope.launch {
             val raw = StringBuilder()
             try {
@@ -191,6 +208,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(error = e.message) }
             } finally {
                 _state.update { it.copy(generating = false) }
+                saveConversation()
             }
         }
     }
@@ -203,11 +221,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         generation?.cancel()
     }
 
-    fun newConversation() {
+    /** Efface toute la conversation (demandé depuis les réglages, avec confirmation). */
+    fun clearConversation() {
         generation?.cancel()
-        _state.update { it.copy(messages = emptyList(), error = null) }
         viewModelScope.launch {
             generation?.join()
+            _state.update { it.copy(messages = emptyList(), error = null) }
+            conversation.clear()
             if (engine.state.value is LlamaEngine.State.Ready) startConversation()
         }
     }

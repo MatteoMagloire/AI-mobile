@@ -11,7 +11,7 @@ Assistant IA personnel qui tourne **hors ligne** directement sur le téléphone 
 
 ## Ce que fait la version actuelle (MVP)
 - Télécharge le modèle au premier lancement (environ 2,1 Go, une seule fois, Wi-Fi par défaut, avec reprise).
-- Chat avec réponse en streaming, bouton Stop, nouvelle conversation.
+- Une seule conversation qui continue : elle est gardée sur le téléphone et reprend au redémarrage (le modèle se souvient des derniers échanges). Bouton Stop, et « Effacer la conversation » dans les réglages.
 - Bouton « Réflexion » : bascule sur le modèle Reasoning ; sa réflexion est repliée sous la réponse.
 - Réglages : température, longueur max, instructions de l'assistant, Wi-Fi uniquement.
 - Fonctionne entièrement en mode avion une fois le modèle téléchargé.

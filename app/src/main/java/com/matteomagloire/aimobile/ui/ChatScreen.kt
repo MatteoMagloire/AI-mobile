@@ -44,7 +44,6 @@ fun ChatScreen(
     state: ChatUiState,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
-    onNewConversation: () -> Unit,
     onReasoningChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onDismissError: () -> Unit,
@@ -69,7 +68,6 @@ fun ChatScreen(
                         label = { Text("Réflexion") },
                         enabled = !state.generating,
                     )
-                    TextButton(onClick = onNewConversation, enabled = ready) { Text("Nouveau") }
                     TextButton(onClick = onOpenSettings) { Text("Réglages") }
                 },
             )

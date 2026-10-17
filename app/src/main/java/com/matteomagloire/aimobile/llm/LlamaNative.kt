@@ -10,6 +10,7 @@ internal object LlamaNative {
     external fun load(path: String, nCtx: Int, nThreads: Int): Int
     external fun configureSampler(temperature: Float, topP: Float)
     external fun startConversation(systemPrompt: String): Int
+    external fun addHistoryMessage(fromUser: Boolean, text: String): Int
     external fun sendUserMessage(text: String, nPredict: Int): Int
     external fun nextToken(): String?
     external fun stopGeneration()
