@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Assistant IA</string>
+    <string name="channel_downloads">Téléchargements</string>
+    <string name="channel_updates">Mises à jour</string>
+    <string name="downloading_model">Téléchargement de %1$s</string>
+    <string name="update_available_title">Nouvelle version disponible</string>
+    <string name="update_available_text">La version %1$s est prête à être installée.</string>
+</resources>
