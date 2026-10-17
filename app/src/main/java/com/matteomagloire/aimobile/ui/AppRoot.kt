@@ -20,6 +20,7 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
         showSettings -> SettingsScreen(
             settings = state.settings,
             onChange = vm::updateSettings,
+            onReasoningChange = vm::setReasoningMode,
             onBack = { showSettings = false },
         )
         !state.modelDownloaded -> SetupScreen(
@@ -38,6 +39,15 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             onReasoningChange = vm::setReasoningMode,
             onOpenSettings = { showSettings = true },
             onDismissError = vm::dismissError,
+            onDismissNotice = vm::dismissNotice,
+        )
+    }
+
+    if (state.reasoningOffer) {
+        ReasoningOfferDialog(
+            wifiOnly = state.settings.wifiOnlyDownloads,
+            onDownload = vm::confirmReasoningDownload,
+            onCancel = vm::cancelReasoningOffer,
         )
     }
 

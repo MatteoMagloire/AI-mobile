@@ -32,6 +32,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     settings: Settings,
     onChange: ((Settings) -> Settings) -> Unit,
+    onReasoningChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -49,7 +50,8 @@ fun SettingsScreen(
             ToggleRow(
                 "Mode réflexion (modèle Reasoning, plus lent)",
                 settings.reasoningMode,
-            ) { v -> onChange { it.copy(reasoningMode = v) } }
+                onReasoningChange,
+            )
 
             Text("Température : ${"%.2f".format(Locale.FRANCE, settings.temperature)}")
             Slider(

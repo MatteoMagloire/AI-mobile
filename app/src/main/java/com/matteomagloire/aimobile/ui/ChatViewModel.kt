@@ -54,6 +54,11 @@ data class ChatUiState(
     val generating: Boolean = false,
     val error: String? = null,
     val update: UpdateUi = UpdateUi.Hidden,
+    /** Proposition de télécharger le modèle Reasoning (affichée quand on active « Réflexion »). */
+    val reasoningOffer: Boolean = false,
+    /** Téléchargement du modèle Reasoning en arrière-plan, pendant qu'on continue à discuter. */
+    val reasoningDownload: DownloadState? = null,
+    val notice: String? = null,
 )
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
@@ -81,9 +86,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // Change de modèle quand on active/désactive le mode réflexion.
         viewModelScope.launch {
             settingsRepo.settings.map { it.reasoningMode }.distinctUntilChanged().collect { reasoning ->
-                selectModel(if (reasoning) ModelCatalog.REASONING else ModelCatalog.INSTRUCT)
+                if (reasoning && !store.isDownloaded(ModelCatalog.REASONING)) {
+                    // Modèle Reasoning absent : on reste en mode rapide.
+                    settingsRepo.update { it.copy(reasoningMode = false) }
+                } else {
+                    selectModel(if (reasoning) ModelCatalog.REASONING else ModelCatalog.INSTRUCT)
+                }
             }
         }
+        watchReasoningDownload()
         viewModelScope.launch {
             settingsRepo.settings.map { it.temperature to it.topP }.distinctUntilChanged().collect { (t, p) ->
                 engine.updateSampler(t, p)
@@ -205,7 +216,54 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.update(transform) }
     }
 
-    fun setReasoningMode(enabled: Boolean) = updateSettings { it.copy(reasoningMode = enabled) }
+    fun setReasoningMode(enabled: Boolean) {
+        if (enabled && !store.isDownloaded(ModelCatalog.REASONING)) {
+            if (_state.value.reasoningDownload == null) _state.update { it.copy(reasoningOffer = true) }
+            else _state.update { it.copy(notice = "Le modèle de réflexion est en cours de téléchargement.") }
+            return
+        }
+        updateSettings { it.copy(reasoningMode = enabled) }
+    }
+
+    fun confirmReasoningDownload() {
+        _state.update { it.copy(reasoningOffer = false) }
+        ModelDownloadWorker.enqueue(getApplication(), ModelCatalog.REASONING, _state.value.settings.wifiOnlyDownloads)
+    }
+
+    fun cancelReasoningOffer() = _state.update { it.copy(reasoningOffer = false) }
+
+    fun dismissNotice() = _state.update { it.copy(notice = null) }
+
+    private fun watchReasoningDownload() {
+        val model = ModelCatalog.REASONING
+        viewModelScope.launch {
+            workManager.getWorkInfosForUniqueWorkFlow(ModelDownloadWorker.workName(model)).collect { infos ->
+                val info = infos.firstOrNull() ?: return@collect
+                when (info.state) {
+                    WorkInfo.State.RUNNING, WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                        val percent = info.progress.getInt(ModelDownloadWorker.KEY_PROGRESS, 0)
+                        _state.update {
+                            it.copy(reasoningDownload = DownloadState(percent, info.state != WorkInfo.State.RUNNING))
+                        }
+                    }
+                    WorkInfo.State.SUCCEEDED -> {
+                        if (_state.value.reasoningDownload == null) return@collect
+                        _state.update {
+                            it.copy(
+                                reasoningDownload = null,
+                                notice = "Le mode réflexion est prêt : appuie sur « Réflexion » pour l'activer.",
+                            )
+                        }
+                    }
+                    WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                        _state.update {
+                            it.copy(reasoningDownload = null, notice = "Le téléchargement du modèle de réflexion a échoué.")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     fun dismissError() = _state.update { it.copy(error = null) }
 

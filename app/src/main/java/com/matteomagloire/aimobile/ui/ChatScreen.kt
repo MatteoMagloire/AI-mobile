@@ -48,6 +48,7 @@ fun ChatScreen(
     onReasoningChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onDismissError: () -> Unit,
+    onDismissNotice: () -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -82,6 +83,22 @@ fun ChatScreen(
                 }
                 is LlamaEngine.State.Failed -> Text(engine.message, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error)
                 else -> Unit
+            }
+            state.reasoningDownload?.let { d ->
+                LinearProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    if (d.waitingForNetwork) "Modèle de réflexion : en attente du réseau (${d.percent} %)"
+                    else "Téléchargement du modèle de réflexion : ${d.percent} %",
+                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            state.notice?.let {
+                Text(
+                    it,
+                    Modifier.fillMaxWidth().clickable(onClick = onDismissNotice).padding(8.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
             state.error?.let {
                 Text(
