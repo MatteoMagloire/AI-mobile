@@ -25,6 +25,8 @@ data class Settings(
     val reasoningModelId: String = ModelCatalog.REASONING.id,
     /** Affiche le temps du premier mot et la vitesse sous les réponses d'Axo. */
     val showSpeed: Boolean = false,
+    /** Cœurs utilisés par le modèle (2 à 4) : moins de cœurs, moins de chauffe. */
+    val threads: Int = 4,
 )
 
 /** Personnalité d'Axo (cahier des charges, « Base de ses instructions »). */
@@ -59,6 +61,7 @@ class SettingsRepository(private val context: Context) {
         val instructModel = stringPreferencesKey("instruct_model")
         val reasoningModel = stringPreferencesKey("reasoning_model")
         val showSpeed = booleanPreferencesKey("show_speed")
+        val threads = intPreferencesKey("threads")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -74,6 +77,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.instructModel] = next.instructModelId
             p[Keys.reasoningModel] = next.reasoningModelId
             p[Keys.showSpeed] = next.showSpeed
+            p[Keys.threads] = next.threads
             p.storeSystemPrompt(next.systemPrompt)
         }
     }
@@ -97,6 +101,7 @@ class SettingsRepository(private val context: Context) {
             reasoningModelId = this[Keys.reasoningModel]?.takeIf { ModelCatalog.byId(it)?.reasoning == true }
                 ?: d.reasoningModelId,
             showSpeed = this[Keys.showSpeed] ?: d.showSpeed,
+            threads = (this[Keys.threads] ?: d.threads).coerceIn(2, 4),
         )
     }
 }

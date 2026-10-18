@@ -47,6 +47,7 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             engineInfo = state.engineInfo,
             onRunSpeed = vm::startSpeedTest,
             onRunEndurance = vm::startEndurance,
+            onThreadsChange = vm::setThreads,
             onStop = vm::stopMeasure,
             onDismissError = vm::dismissMeasureError,
             onBack = { back() },

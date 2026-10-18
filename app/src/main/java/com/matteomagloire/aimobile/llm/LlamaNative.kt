@@ -26,6 +26,7 @@ internal object LlamaNative {
     external fun contextUsage(): IntArray
     external fun lastStats(): LongArray
     external fun modelSize(): Long
+    external fun setThreads(nThreads: Int)
     external fun unload()
     external fun systemInfo(): String
     external fun buildRef(): String

@@ -68,6 +68,7 @@ data class EnduranceResult(
     val modelId: String,
     val points: List<EndurancePoint>,
     val thermalStatus: Int,
+    val threads: Int = 4,
 ) {
     val durationSeconds: Int get() = points.lastOrNull()?.seconds ?: 0
 
