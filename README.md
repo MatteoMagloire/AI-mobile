@@ -51,7 +51,7 @@ La CI (`.github/workflows/build.yml`) compile l'APK debug à chaque PR ; il est 
    | `ANDROID_KEY_ALIAS` | `aimobile` |
    | `ANDROID_KEY_PASSWORD` | mot de passe de la clé |
 3. **Dépôt public** conseillé : l'app lit les Releases sans jeton (un jeton embarqué dans l'APK pourrait être extrait).
-4. **Publier** : créer un tag de version.
+4. **Publier** : onglet Actions > Release > Run workflow, avec le numéro de version (`0.2.0`), ou créer un tag de version.
    ```bash
    git tag v0.2.0 && git push origin v0.2.0
    ```

@@ -1,9 +1,18 @@
 name: Release
 
-# Publier une version : git tag v1.2.3 && git push origin v1.2.3
+# Publier une version : git tag v1.2.3 && git push origin v1.2.3,
+# ou onglet Actions > Release > Run workflow avec le numéro de version.
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à publier (ex. 0.1.0)"
+        required: true
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 permissions:
   contents: write
@@ -38,7 +47,7 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           ./gradlew --no-daemon testReleaseUnitTest assembleRelease -PappVersion="$VERSION" -PupdateRepo="$GITHUB_REPOSITORY"
           mkdir dist
           cp app/build/outputs/apk/release/app-release.apk "dist/AI-mobile-$VERSION.apk"
@@ -49,4 +58,4 @@ jobs:
       - name: Publication de la GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
