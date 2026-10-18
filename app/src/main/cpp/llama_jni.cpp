@@ -3,9 +3,11 @@
 // Les fonctions ne doivent jamais être appelées en parallèle (voir LlamaEngine.kt).
 
 #include <jni.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <chrono>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -14,6 +16,10 @@
 #include "common.h"
 #include "llama.h"
 #include "sampling.h"
+
+#ifndef LLAMA_CPP_REF
+#define LLAMA_CPP_REF "inconnu"
+#endif
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -51,6 +57,23 @@ llama_pos g_stop_pos = 0;
 std::string g_cached_chars;
 std::ostringstream g_assistant_ss;
 bool g_assistant_pending = false;
+
+// Cache du prompt système : tant que le même texte est en tête du contexte,
+// une nouvelle conversation garde son KV au lieu de le relire.
+std::string g_system_prompt;
+bool g_system_prompt_ready = false;
+size_t g_system_msg_count = 0;
+
+// Mesures de la dernière réponse (lecture du message, puis écriture).
+int64_t g_stat_prompt_tokens = 0;
+int64_t g_stat_prompt_us = 0;
+int64_t g_stat_gen_tokens = 0;
+int64_t g_stat_gen_us = 0;
+
+int64_t now_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 void android_log_callback(ggml_log_level level, const char *text, void *) {
 #ifdef __ANDROID__
@@ -91,6 +114,10 @@ bool is_valid_utf8(const std::string &s) {
     return true;
 }
 
+bool has_template() {
+    return common_chat_templates_was_explicit(g_chat_templates.get());
+}
+
 // Formate un message avec le template de chat du modèle (jinja d'abord, ancien format sinon).
 std::string chat_add_and_format(const std::string &role, const std::string &content) {
     common_chat_msg msg;
@@ -110,6 +137,14 @@ std::string chat_add_and_format(const std::string &role, const std::string &cont
     return formatted;
 }
 
+// Ajoute un message à l'historique du template sans le décoder (son KV est déjà là).
+void chat_push(const char *role, const std::string &content) {
+    common_chat_msg msg;
+    msg.role = role;
+    msg.content = content;
+    g_chat_msgs.push_back(msg);
+}
+
 // Termine le message de l'assistant en cours (fin normale, limite atteinte ou arrêt demandé).
 void commit_assistant_message() {
     if (!g_assistant_pending) return;
@@ -123,6 +158,22 @@ void reset_short_term() {
     g_cached_chars.clear();
     g_assistant_ss.str("");
     g_assistant_ss.clear();
+}
+
+void reset_stats() {
+    g_stat_prompt_tokens = g_stat_prompt_us = g_stat_gen_tokens = g_stat_gen_us = 0;
+}
+
+// Oublie tout : contexte vide, plus de prompt système en cache.
+void clear_conversation() {
+    g_chat_msgs.clear();
+    g_assistant_pending = false;
+    g_system_prompt.clear();
+    g_system_prompt_ready = false;
+    g_system_msg_count = 0;
+    g_system_prompt_pos = g_current_pos = 0;
+    reset_short_term();
+    llama_memory_clear(llama_get_memory(g_context), false);
 }
 
 // Libère de la place en jetant la moitié la plus ancienne de la conversation
@@ -202,17 +253,21 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_load(
     g_batch = common_batch(ctx);
     g_chat_templates = common_chat_templates_init(g_model, "");
     g_use_jinja = true;
+    clear_conversation();
+    reset_stats();
     return 0;
 }
 
+// seed < 0 : graine aléatoire (usage normal) ; sinon réponses reproductibles (banc d'essai).
 JNIEXPORT void JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_configureSampler(
-        JNIEnv *, jobject, jfloat temp, jfloat top_p) {
+        JNIEnv *, jobject, jfloat temp, jfloat top_p, jint seed) {
     if (!g_model) return;
     free_sampler();
     common_params_sampling sparams;
     sparams.temp = temp;
     sparams.top_p = top_p;
+    if (seed >= 0) sparams.seed = (uint32_t) seed;
     g_sampler = common_sampler_init(g_model, sparams);
 }
 
@@ -220,25 +275,39 @@ JNIEXPORT jint JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_startConversation(
         JNIEnv *env, jobject, jstring jsystem_prompt) {
     if (!g_context) return 1;
-    g_chat_msgs.clear();
-    g_assistant_pending = false;
-    g_system_prompt_pos = g_current_pos = 0;
-    reset_short_term();
-    llama_memory_clear(llama_get_memory(g_context), false);
-
     std::string prompt = to_string(env, jsystem_prompt);
-    if (prompt.empty()) return 0;
 
-    const bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
-    if (has_template) prompt = chat_add_and_format(ROLE_SYSTEM, prompt);
-
-    const auto tokens = common_tokenize(g_context, prompt, true, true);
-    if ((int) tokens.size() > g_n_ctx / 2) {
-        LOGE("prompt système trop long (%d tokens)", (int) tokens.size());
-        return 2;
+    if (g_system_prompt_ready && prompt == g_system_prompt) {
+        // Même prompt système : on garde son KV et on jette seulement la conversation.
+        g_assistant_pending = false;
+        reset_short_term();
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, g_system_prompt_pos, -1);
+        g_current_pos = g_system_prompt_pos;
+        g_chat_msgs.resize(g_system_msg_count);
+        return 0;
     }
-    if (decode_tokens(tokens, false)) return 3;
+
+    clear_conversation();
+    if (!prompt.empty()) {
+        std::string formatted = prompt;
+        if (has_template()) {
+            formatted = chat_add_and_format(ROLE_SYSTEM, prompt);
+            g_system_msg_count = 1;
+        }
+        const auto tokens = common_tokenize(g_context, formatted, true, true);
+        if ((int) tokens.size() > g_n_ctx / 2) {
+            LOGE("prompt système trop long (%d tokens)", (int) tokens.size());
+            clear_conversation();
+            return 2;
+        }
+        if (decode_tokens(tokens, false)) {
+            clear_conversation();
+            return 3;
+        }
+    }
     g_system_prompt_pos = g_current_pos;
+    g_system_prompt = prompt;
+    g_system_prompt_ready = true;
     return 0;
 }
 
@@ -248,10 +317,10 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_sendUserMessage(
     if (!g_context || !g_sampler) return 1;
     commit_assistant_message();
     reset_short_term();
+    reset_stats();
 
     std::string text = to_string(env, jtext);
-    const bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
-    if (has_template) text = chat_add_and_format(ROLE_USER, text);
+    if (has_template()) text = chat_add_and_format(ROLE_USER, text);
 
     // add_special seulement au tout début (BOS), sinon les tokens spéciaux du template sont analysés.
     auto tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
@@ -260,7 +329,10 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_sendUserMessage(
         LOGW("message trop long, tronqué à %d tokens", max_tokens);
         tokens.resize(max_tokens);
     }
+    const int64_t t0 = now_us();
     if (decode_tokens(tokens, true)) return 2;
+    g_stat_prompt_tokens = (int64_t) tokens.size();
+    g_stat_prompt_us = now_us() - t0;
 
     common_sampler_reset(g_sampler);
     g_stop_pos = g_current_pos + n_predict;
@@ -276,17 +348,13 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_addHistoryMessage(
     if (!g_context) return 1;
     commit_assistant_message();
     std::string text = to_string(env, jtext);
-    const bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
 
     llama_tokens tokens;
     if (from_user) {
-        if (has_template) text = chat_add_and_format(ROLE_USER, text);
+        if (has_template()) text = chat_add_and_format(ROLE_USER, text);
         tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
     } else {
-        common_chat_msg msg;
-        msg.role = ROLE_ASSISTANT;
-        msg.content = text;
-        g_chat_msgs.push_back(msg);
+        chat_push(ROLE_ASSISTANT, text);
         tokens = common_tokenize(g_context, text, false, false);
         const llama_vocab *vocab = llama_model_get_vocab(g_model);
         llama_token end = llama_vocab_eot(vocab);
@@ -302,12 +370,14 @@ JNIEXPORT jstring JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_nextToken(JNIEnv *env, jobject) {
     if (!g_context || !g_assistant_pending) return nullptr;
 
-    if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) shift_context();
     if (g_current_pos >= g_stop_pos) {
         commit_assistant_message();
         return nullptr;
     }
+    // Décalage juste avant un décodage : le KV n'est jamais laissé avec un décalage en attente.
+    if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) shift_context();
 
+    const int64_t t0 = now_us();
     const llama_token id = common_sampler_sample(g_sampler, g_context, -1);
     common_sampler_accept(g_sampler, id, true);
 
@@ -319,6 +389,8 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_nextToken(JNIEnv *env, jobject)
         return nullptr;
     }
     g_current_pos++;
+    g_stat_gen_tokens++;
+    g_stat_gen_us += now_us() - t0;
 
     if (llama_vocab_is_eog(llama_model_get_vocab(g_model), id)) {
         commit_assistant_message();
@@ -339,10 +411,98 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_stopGeneration(JNIEnv *, jobjec
     commit_assistant_message();
 }
 
+// Écrit le KV de la conversation dans un fichier, pour la reprendre sans tout relire.
+// Renvoie la taille écrite, 0 en cas d'échec.
+JNIEXPORT jlong JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_saveSession(JNIEnv *env, jobject, jstring jpath) {
+    if (!g_context) return 0;
+    commit_assistant_message();
+    const std::string path = to_string(env, jpath);
+    return (jlong) llama_state_seq_save_file(g_context, path.c_str(), 0, nullptr, 0);
+}
+
+// Recharge un KV écrit par saveSession. Les messages ne sont pas relus : ils servent seulement
+// au template de chat pour formater la suite. En cas d'échec le contexte est vide.
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_restoreSession(
+        JNIEnv *env, jobject, jstring jpath, jlong expected_bytes, jstring jsystem_prompt,
+        jint system_prompt_tokens, jbooleanArray jfrom_user, jobjectArray jtexts) {
+    if (!g_context) return 1;
+    clear_conversation();
+    const std::string path = to_string(env, jpath);
+
+    // llama.cpp s'arrête net (assert) sur un fichier tronqué : on vérifie la taille avant.
+    struct stat st {};
+    if (stat(path.c_str(), &st) != 0 || (jlong) st.st_size != expected_bytes) return 5;
+
+    llama_token unused[1];
+    size_t n_token_count = 0;
+    if (llama_state_seq_load_file(g_context, path.c_str(), 0, unused, 1, &n_token_count) == 0) {
+        clear_conversation();
+        return 2;
+    }
+    const llama_pos pos_max = llama_memory_seq_pos_max(llama_get_memory(g_context), 0);
+    if (pos_max < 0 || system_prompt_tokens < 0 || system_prompt_tokens > pos_max + 1 || pos_max + 1 > g_n_ctx) {
+        clear_conversation();
+        return 3;
+    }
+    g_current_pos = pos_max + 1;
+    g_system_prompt_pos = system_prompt_tokens;
+
+    const std::string prompt = to_string(env, jsystem_prompt);
+    if (!prompt.empty() && has_template()) {
+        chat_push(ROLE_SYSTEM, prompt);
+        g_system_msg_count = 1;
+    }
+    g_system_prompt = prompt;
+    g_system_prompt_ready = true;
+
+    const jsize n = env->GetArrayLength(jtexts);
+    if (env->GetArrayLength(jfrom_user) != n) {
+        clear_conversation();
+        return 4;
+    }
+    jboolean *from_user = env->GetBooleanArrayElements(jfrom_user, nullptr);
+    for (jsize i = 0; i < n; i++) {
+        auto jtext = (jstring) env->GetObjectArrayElement(jtexts, i);
+        chat_push(from_user[i] ? ROLE_USER : ROLE_ASSISTANT, to_string(env, jtext));
+        env->DeleteLocalRef(jtext);
+    }
+    env->ReleaseBooleanArrayElements(jfrom_user, from_user, JNI_ABORT);
+    return 0;
+}
+
+// Nombre de tokens du prompt système, puis de tout le contexte utilisé.
+JNIEXPORT jintArray JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_contextUsage(JNIEnv *env, jobject) {
+    const jint values[2] = {(jint) g_system_prompt_pos, (jint) g_current_pos};
+    jintArray out = env->NewIntArray(2);
+    env->SetIntArrayRegion(out, 0, 2, values);
+    return out;
+}
+
+// Mesures de la dernière réponse : tokens lus, durée (µs), tokens écrits, durée (µs).
+JNIEXPORT jlongArray JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_lastStats(JNIEnv *env, jobject) {
+    const jlong values[4] = {g_stat_prompt_tokens, g_stat_prompt_us, g_stat_gen_tokens, g_stat_gen_us};
+    jlongArray out = env->NewLongArray(4);
+    env->SetLongArrayRegion(out, 0, 4, values);
+    return out;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_modelSize(JNIEnv *, jobject) {
+    return g_model ? (jlong) llama_model_size(g_model) : 0;
+}
+
 JNIEXPORT void JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
     g_chat_msgs.clear();
     g_assistant_pending = false;
+    g_system_prompt.clear();
+    g_system_prompt_ready = false;
+    g_system_msg_count = 0;
+    g_system_prompt_pos = g_current_pos = 0;
     reset_short_term();
     free_sampler();
     g_chat_templates.reset();
@@ -356,6 +516,12 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
 JNIEXPORT jstring JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_systemInfo(JNIEnv *env, jobject) {
     return env->NewStringUTF(llama_print_system_info());
+}
+
+// Version de llama.cpp compilée : les fichiers de session ne servent qu'avec la même.
+JNIEXPORT jstring JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_buildRef(JNIEnv *env, jobject) {
+    return env->NewStringUTF(LLAMA_CPP_REF);
 }
 
 }  // extern "C"

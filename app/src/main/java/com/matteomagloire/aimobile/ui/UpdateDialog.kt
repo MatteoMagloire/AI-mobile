@@ -43,13 +43,13 @@ fun UpdateDialog(update: UpdateUi, onInstall: () -> Unit, onLater: () -> Unit) {
                     Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                         when (update) {
                             is UpdateUi.NeedsPermission -> Text(
-                                "Autorise « Installer des applis inconnues » pour l'assistant, puis reviens et appuie sur Mettre à jour.",
+                                "Autorise « Installer des applis inconnues » pour Axo, puis reviens et appuie sur Mettre à jour.",
                             )
                             is UpdateUi.Failed -> Text(update.message, color = MaterialTheme.colorScheme.error)
                             else -> Unit
                         }
                         if (info.notes.isNotBlank()) Text(info.notes)
-                        Text("Ta mémoire et tes réglages sont conservés.", style = MaterialTheme.typography.bodySmall)
+                        Text("Ta conversation, tes réglages et les modèles sont conservés.", style = MaterialTheme.typography.bodySmall)
                     }
                 },
                 confirmButton = { TextButton(onClick = onInstall) { Text("Mettre à jour") } },

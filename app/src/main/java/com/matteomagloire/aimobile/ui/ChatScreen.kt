@@ -1,44 +1,71 @@
 package com.matteomagloire.aimobile.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.matteomagloire.aimobile.chat.ChatMessage
 import com.matteomagloire.aimobile.llm.LlamaEngine
+import com.matteomagloire.aimobile.ui.theme.Axo
+import com.matteomagloire.aimobile.ui.theme.MonoStyle
+import com.matteomagloire.aimobile.ui.theme.OverlineStyle
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     state: ChatUiState,
@@ -51,123 +78,342 @@ fun ChatScreen(
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val ready = state.engine is LlamaEngine.State.Ready
+    // Liste inversée : le bas reste collé au dernier message pendant qu'Axo écrit.
+    val rows = remember(state.messages) { chatItems(state.messages).asReversed() }
+    val waking = !state.conversationReady && state.engine !is LlamaEngine.State.Failed
 
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
-        if (state.messages.isNotEmpty()) listState.scrollToItem(state.messages.lastIndex)
+    LaunchedEffect(state.messages.size) {
+        if (rows.isNotEmpty()) listState.scrollToItem(0)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Assistant") },
-                actions = {
-                    FilterChip(
-                        selected = state.settings.reasoningMode,
-                        onClick = { onReasoningChange(!state.settings.reasoningMode) },
-                        label = { Text("Réflexion") },
-                        enabled = !state.generating,
-                    )
-                    TextButton(onClick = onOpenSettings) { Text("Réglages") }
-                },
+    Column(Modifier.fillMaxSize().background(Axo.Ink).statusBarsPadding().navigationBarsPadding().imePadding()) {
+        ChatHeader(state, waking, onOpenSettings)
+        if (waking) AmberProgress(null)
+
+        (state.engine as? LlamaEngine.State.Failed)?.let { Banner(it.message, Axo.Blush) }
+        state.reasoningDownload?.let { d ->
+            AmberProgress(d.percent / 100f)
+            Banner(
+                if (d.waitingForNetwork) "Modèle de réflexion : en attente du réseau (${d.percent} %)"
+                else "Téléchargement du modèle de réflexion : ${d.percent} %",
+                Axo.Muted,
             )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            when (val engine = state.engine) {
-                is LlamaEngine.State.Loading -> {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text("Chargement du modèle…", Modifier.padding(8.dp))
-                }
-                is LlamaEngine.State.Failed -> Text(engine.message, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error)
-                else -> Unit
-            }
-            state.reasoningDownload?.let { d ->
-                LinearProgressIndicator(progress = { d.percent / 100f }, modifier = Modifier.fillMaxWidth())
-                Text(
-                    if (d.waitingForNetwork) "Modèle de réflexion : en attente du réseau (${d.percent} %)"
-                    else "Téléchargement du modèle de réflexion : ${d.percent} %",
-                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            state.notice?.let {
-                Text(
-                    it,
-                    Modifier.fillMaxWidth().clickable(onClick = onDismissNotice).padding(8.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            state.error?.let {
-                Text(
-                    it,
-                    Modifier.fillMaxWidth().clickable(onClick = onDismissError).padding(8.dp),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+        }
+        state.notice?.let { Banner(it, Axo.Amber, onDismissNotice) }
+        state.error?.let { Banner(it, Axo.Blush, onDismissError) }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.messages) { MessageBubble(it) }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            reverseLayout = true,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.Bottom),
+        ) {
+            if (state.messages.isEmpty() && state.conversationReady) {
+                item { EmptyChat() }
             }
-
-            Row(
-                Modifier.fillMaxWidth().padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Écris ton message…") },
-                    maxLines = 5,
-                )
-                if (state.generating) {
-                    OutlinedButton(onClick = onStop) { Text("Stop") }
-                } else {
-                    Button(
-                        onClick = { onSend(input); input = "" },
-                        enabled = ready && input.isNotBlank(),
-                    ) { Text("Envoyer") }
+            items(rows, key = { it.key }) { item ->
+                when (item) {
+                    is ChatItem.Day -> Text(
+                        item.label.uppercase(Locale.FRENCH),
+                        style = OverlineStyle,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    is ChatItem.Message -> MessageBubble(
+                        message = item.message,
+                        streaming = state.generating && item.last,
+                        showSpeed = state.settings.showSpeed,
+                    )
                 }
             }
+        }
+
+        InputBar(
+            input = input,
+            onInput = { input = it },
+            reasoning = state.settings.reasoningMode,
+            generating = state.generating,
+            canSend = state.conversationReady && !state.generating && input.isNotBlank(),
+            onReasoningChange = onReasoningChange,
+            onSend = { onSend(input); input = "" },
+            onStop = onStop,
+        )
+    }
+}
+
+@Composable
+private fun ChatHeader(state: ChatUiState, waking: Boolean, onOpenSettings: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Axo.Ember)
+                .border(BorderStroke(1.dp, Axo.AmberBorder), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(AxoIcons.Face, contentDescription = null, modifier = Modifier.size(36.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text("Axo", style = MaterialTheme.typography.titleLarge)
+            val status = when {
+                state.engine is LlamaEngine.State.Failed -> "Endormi : le modèle ne s'est pas chargé"
+                waking -> "Se réveille…"
+                state.generating && state.messages.lastOrNull()?.isThinking == true -> "Réfléchit…"
+                state.generating -> "Écrit…"
+                state.settings.reasoningMode -> "Mode réflexion · hors ligne"
+                else -> "Hors ligne · sur ton téléphone"
+            }
+            Text(status, style = MaterialTheme.typography.bodySmall, color = Axo.Muted)
+        }
+        IconButton(onClick = onOpenSettings) {
+            Icon(AxoIcons.Settings, contentDescription = "Réglages", tint = Axo.TextSecondary)
         }
     }
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage) {
-    var showThinking by rememberSaveable { mutableStateOf(false) }
-    val colors = MaterialTheme.colorScheme
-    Box(Modifier.fillMaxWidth(), contentAlignment = if (message.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
-        Column(
-            Modifier
-                .widthIn(max = 320.dp)
-                .background(
-                    if (message.fromUser) colors.primaryContainer else colors.surfaceVariant,
-                    RoundedCornerShape(16.dp),
-                )
-                .padding(12.dp),
-        ) {
-            // La réflexion du mode Reasoning est repliée par défaut.
-            if (message.thinking.isNotEmpty()) {
-                Text(
-                    if (message.isThinking) "Réflexion en cours…" else if (showThinking) "Masquer la réflexion" else "Voir la réflexion",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.primary,
-                    modifier = Modifier.clickable { showThinking = !showThinking },
-                )
-                if (showThinking) {
-                    Text(message.thinking, style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic)
-                }
+private fun Banner(text: String, color: androidx.compose.ui.graphics.Color, onDismiss: (() -> Unit)? = null) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = color,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onDismiss != null) Modifier.clickable(onClick = onDismiss) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun EmptyChat() {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Image(AxoIcons.Face, contentDescription = null, modifier = Modifier.size(96.dp))
+        Text("Salut ! Je suis là.", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Écris-moi ce que tu veux : tout reste sur ton téléphone.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Axo.Muted,
+        )
+    }
+}
+
+// Clés stables : l'état d'un message (réflexion dépliée) le suit quand de nouveaux messages arrivent.
+private sealed interface ChatItem {
+    val key: String
+
+    data class Day(val label: String) : ChatItem {
+        override val key get() = "day:$label"
+    }
+
+    data class Message(val message: ChatMessage, val last: Boolean, val index: Int) : ChatItem {
+        override val key get() = "message:$index"
+    }
+}
+
+/** Messages avec un intertitre à chaque nouveau jour (« Aujourd'hui », « Hier », « 12 octobre »). */
+private fun chatItems(messages: List<ChatMessage>): List<ChatItem> {
+    val out = ArrayList<ChatItem>(messages.size + 4)
+    var lastDay: LocalDate? = null
+    val today = LocalDate.now()
+    messages.forEachIndexed { i, m ->
+        if (m.time > 0) {
+            val day = Instant.ofEpochMilli(m.time).atZone(ZoneId.systemDefault()).toLocalDate()
+            if (day != lastDay) {
+                out += ChatItem.Day(dayLabel(day, today))
+                lastDay = day
             }
-            if (message.text.isNotEmpty() || message.thinking.isEmpty()) {
-                Text(message.text.ifEmpty { "…" }, style = MaterialTheme.typography.bodyLarge)
+        }
+        out += ChatItem.Message(m, last = i == messages.lastIndex, index = i)
+    }
+    return out
+}
+
+private fun dayLabel(day: LocalDate, today: LocalDate): String = when (day) {
+    today -> "Aujourd'hui"
+    today.minusDays(1) -> "Hier"
+    else -> day.format(DateTimeFormatter.ofPattern(if (day.year == today.year) "d MMMM" else "d MMMM yyyy", Locale.FRENCH))
+}
+
+@Composable
+private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: Boolean) {
+    if (message.fromUser) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            Text(
+                message.text,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .clip(RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                    .background(Axo.Slate)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
+        return
+    }
+    var showThinking by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // La réflexion du mode Reasoning est repliée par défaut.
+        if (message.thinking.isNotEmpty()) {
+            ThinkingChip(message, expanded = showThinking) { showThinking = !showThinking }
+            if (showThinking) {
+                Text(
+                    message.thinking,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = Axo.Muted,
+                    modifier = Modifier
+                        .widthIn(max = 320.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Axo.Card)
+                        .padding(12.dp),
+                )
+            }
+        }
+        if (message.text.isNotEmpty() || (message.thinking.isEmpty())) {
+            val text = buildAnnotatedString {
+                append(message.text)
+                if (streaming) withStyle(SpanStyle(color = Axo.Amber)) { append(" ▍") }
+            }
+            Text(
+                if (message.text.isEmpty() && !streaming) buildAnnotatedString { append("…") } else text,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .widthIn(max = 320.dp)
+                    .clip(RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp))
+                    .background(Axo.Ember)
+                    .border(BorderStroke(1.dp, Axo.EmberBorder), RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
+        if (showSpeed && !streaming && message.tokensPerSecond > 0f) {
+            Text(
+                "premier mot ${seconds(message.firstWordMs)} · ${tokensPerSecond(message.tokensPerSecond.toDouble())}",
+                style = MonoStyle,
+                color = Axo.Muted,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThinkingChip(message: ChatMessage, expanded: Boolean, onClick: () -> Unit) {
+    val label = when {
+        message.isThinking -> "Réfléchit…"
+        message.thinkingMs > 0 -> "A réfléchi pendant ${((message.thinkingMs + 500) / 1000).coerceAtLeast(1)} s"
+        else -> "Sa réflexion"
+    }
+    val pulse = rememberInfiniteTransition(label = "réflexion")
+    val alpha by pulse.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "lueur",
+    )
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .drawBehind {
+                drawRoundRect(
+                    color = Axo.AmberBorder,
+                    style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))),
+                    cornerRadius = CornerRadius(12.dp.toPx()),
+                )
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (message.isThinking) {
+            Box(Modifier.size(8.dp).alpha(alpha).clip(CircleShape).background(Axo.Amber))
+        } else {
+            Icon(
+                AxoIcons.Chevron,
+                contentDescription = null,
+                tint = Axo.AmberSoft,
+                modifier = Modifier.size(14.dp).then(if (expanded) Modifier.alpha(0.6f) else Modifier),
+            )
+        }
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Axo.AmberSoft)
+    }
+}
+
+@Composable
+private fun InputBar(
+    input: String,
+    onInput: (String) -> Unit,
+    reasoning: Boolean,
+    generating: Boolean,
+    canSend: Boolean,
+    onReasoningChange: (Boolean) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (reasoning) Axo.Ember else androidx.compose.ui.graphics.Color.Transparent)
+                .border(BorderStroke(1.dp, if (reasoning) Axo.AmberBorder else Axo.Line), RoundedCornerShape(10.dp))
+                .clickable(enabled = !generating) { onReasoningChange(!reasoning) }
+                .heightIn(min = 36.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val color = if (reasoning) Axo.Amber else Axo.Muted
+            Icon(AxoIcons.Thinking, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+            Text("Réflexion", style = MaterialTheme.typography.labelMedium, color = color)
+        }
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BasicTextField(
+                value = input,
+                onValueChange = onInput,
+                modifier = Modifier.weight(1f),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Axo.Linen),
+                cursorBrush = SolidColor(Axo.Amber),
+                maxLines = 5,
+                decorationBox = { inner ->
+                    Box(
+                        Modifier
+                            .heightIn(min = 52.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Axo.Card)
+                            .border(BorderStroke(1.dp, Axo.Line), RoundedCornerShape(18.dp))
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (input.isEmpty()) {
+                            Text("Écris à Axo…", style = MaterialTheme.typography.bodyLarge, color = Axo.Faint)
+                        }
+                        inner()
+                    }
+                },
+            )
+            if (generating) {
+                Box(
+                    Modifier.size(52.dp).clip(RoundedCornerShape(18.dp)).background(Axo.Ember)
+                        .border(BorderStroke(1.dp, Axo.AmberBorder), RoundedCornerShape(18.dp))
+                        .clickable(onClick = onStop),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(AxoIcons.Stop, contentDescription = "Arrêter la réponse", tint = Axo.Amber) }
+            } else {
+                Box(
+                    Modifier.size(52.dp).clip(RoundedCornerShape(18.dp))
+                        .background(if (canSend) Axo.Amber else Axo.Slate)
+                        .clickable(enabled = canSend, onClick = onSend),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(AxoIcons.Send, contentDescription = "Envoyer", tint = if (canSend) Axo.OnAmber else Axo.Faint)
+                }
             }
         }
     }

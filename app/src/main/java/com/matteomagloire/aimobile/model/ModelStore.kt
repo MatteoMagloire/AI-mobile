@@ -13,6 +13,10 @@ class ModelStore(context: Context) {
 
     fun isDownloaded(model: ModelInfo) = fileFor(model).let { it.exists() && it.length() > 0 }
 
+    /** Avancement d'un téléchargement interrompu, d'après le fichier partiel. */
+    fun partialPercent(model: ModelInfo): Int =
+        (partialFileFor(model).length() * 100 / model.approxSizeBytes).toInt().coerceIn(0, 99)
+
     fun delete(model: ModelInfo) {
         fileFor(model).delete()
         partialFileFor(model).delete()

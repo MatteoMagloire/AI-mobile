@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.AiMobile" parent="android:Theme.Material.NoActionBar" />
+    <!-- Fond encre dès l'ouverture (écran de démarrage compris) : pas d'éclair blanc avant l'interface. -->
+    <style name="Theme.AiMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/axo_ink</item>
+        <item name="android:windowSplashScreenBackground">@color/axo_ink</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

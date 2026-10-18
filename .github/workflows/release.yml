@@ -50,12 +50,19 @@ jobs:
           VERSION="${TAG#v}"
           ./gradlew --no-daemon testReleaseUnitTest assembleRelease -PappVersion="$VERSION" -PupdateRepo="$GITHUB_REPOSITORY"
           mkdir dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/AI-mobile-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/Axo-$VERSION.apk"
           cd dist
-          sha256sum "AI-mobile-$VERSION.apk" > "AI-mobile-$VERSION.apk.sha256"
-          cat "AI-mobile-$VERSION.apk.sha256"
+          sha256sum "Axo-$VERSION.apk" > "Axo-$VERSION.apk.sha256"
+          cat "Axo-$VERSION.apk.sha256"
 
+      # Les notes de .github/release-notes/<tag>.md s'affichent dans la fenêtre de mise à jour de l'app.
       - name: Publication de la GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+        run: |
+          NOTES=".github/release-notes/$TAG.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "Axo $TAG" --notes-file "$NOTES"
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "Axo $TAG" --generate-notes
+          fi

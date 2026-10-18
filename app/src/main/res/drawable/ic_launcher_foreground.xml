@@ -1,14 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Axo, piste C : l'axolotl dont les branchies sont des liens du Cerveau (un lien givre = mémoire froide). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Bulle de discussion -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,36h40a6,6 0,0 1,6 6v22a6,6 0,0 1,-6 6H50l-10,9v-9h-6a6,6 0,0 1,-6 -6V42a6,6 0,0 1,6 -6z" />
-    <path
-        android:fillColor="#1E3A5F"
-        android:pathData="M42,53m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0M54,53m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0M66,53m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <!-- Réduit et recentré pour tenir dans la zone sûre des icônes adaptatives (66 dp). -->
+    <group
+        android:pivotX="54"
+        android:pivotY="57.7"
+        android:scaleX="0.86"
+        android:scaleY="0.86"
+        android:translateY="-3.7">
+        <path
+            android:pathData="M38,53L26,42M35,60L22,58M38,67L26,73M70,53L82,42M73,60L86,58M70,67L82,73"
+            android:strokeWidth="2.6"
+            android:strokeColor="#F0A35E"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#F7C998"
+            android:pathData="M22.4,42a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M18.4,58a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M78.4,42a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M82.4,58a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M78.4,73a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0" />
+        <path
+            android:fillColor="#7C8BA1"
+            android:pathData="M22.4,73a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0" />
+        <path
+            android:fillColor="#F0A35E"
+            android:pathData="M34,61a20,16 0,1 0,40 0a20,16 0,1 0,-40 0" />
+        <path
+            android:fillColor="#1A1208"
+            android:pathData="M43.3,58a2.7,2.7 0,1 0,5.4 0a2.7,2.7 0,1 0,-5.4 0M59.3,58a2.7,2.7 0,1 0,5.4 0a2.7,2.7 0,1 0,-5.4 0" />
+        <path
+            android:pathData="M49,66Q54,70 59,66"
+            android:strokeWidth="2"
+            android:strokeColor="#1A1208"
+            android:strokeLineCap="round" />
+    </group>
 </vector>
