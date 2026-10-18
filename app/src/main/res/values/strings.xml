@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Assistant IA</string>
+    <string name="app_name">Axo</string>
     <string name="channel_downloads">Téléchargements</string>
     <string name="channel_updates">Mises à jour</string>
     <string name="downloading_model">Téléchargement de %1$s</string>

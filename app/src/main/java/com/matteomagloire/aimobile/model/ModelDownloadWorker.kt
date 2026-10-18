@@ -93,7 +93,7 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) :
             .setOnlyAlertOnce(true)
             .build()
         return ForegroundInfo(
-            NOTIFICATION_ID,
+            notificationId(model),
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
@@ -104,7 +104,14 @@ class ModelDownloadWorker(context: Context, params: WorkerParameters) :
         const val KEY_PROGRESS = "progress"
         private const val NOTIFICATION_ID = 1001
 
+        // Une notification par fichier : plusieurs téléchargements peuvent tourner en même temps.
+        private fun notificationId(model: ModelInfo) = NOTIFICATION_ID + ModelCatalog.all.indexOf(model).coerceAtLeast(0)
+
         fun workName(model: ModelInfo) = "download-${model.id}"
+
+        fun cancel(context: Context, model: ModelInfo) {
+            WorkManager.getInstance(context).cancelUniqueWork(workName(model))
+        }
 
         fun enqueue(context: Context, model: ModelInfo, wifiOnly: Boolean) {
             val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()

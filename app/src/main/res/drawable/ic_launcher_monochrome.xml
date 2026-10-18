@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône à thème (Android 13+) : une seule couleur, les yeux et la bouche sont des trous. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="57.7"
+        android:scaleX="0.86"
+        android:scaleY="0.86"
+        android:translateY="-3.7">
+        <path
+            android:pathData="M38,53L26,42M35,60L22,58M38,67L26,73M70,53L82,42M73,60L86,58M70,67L82,73"
+            android:strokeWidth="2.6"
+            android:strokeColor="#FFFFFF"
+            android:strokeLineCap="round" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M22.4,42a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M18.4,58a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M22.4,73a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M78.4,42a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M82.4,58a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0M78.4,73a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M34,61a20,16 0,1 0,40 0a20,16 0,1 0,-40 0ZM43.3,58a2.7,2.7 0,1 0,5.4 0a2.7,2.7 0,1 0,-5.4 0ZM59.3,58a2.7,2.7 0,1 0,5.4 0a2.7,2.7 0,1 0,-5.4 0ZM48.6,65.6Q54,70.4 59.4,65.6Q54,73.2 48.6,65.6Z" />
+    </group>
+</vector>
