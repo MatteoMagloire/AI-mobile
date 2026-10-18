@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -205,6 +206,23 @@ fun AmberProgress(progress: Float?, modifier: Modifier = Modifier) {
             trackColor = Axo.Line,
             drawStopIndicator = {},
         )
+    }
+}
+
+/** Choix parmi quelques options (onglets, nombre de cœurs). */
+@Composable
+fun ChoiceChip(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .heightIn(min = 40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) Axo.Ember else Axo.Card)
+            .border(BorderStroke(1.dp, if (selected) Axo.AmberBorder else Axo.Line), RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Axo.Amber else Axo.TextSecondary)
     }
 }
 

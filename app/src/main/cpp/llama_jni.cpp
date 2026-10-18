@@ -513,6 +513,12 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
     g_model = nullptr;
 }
 
+// Nombre de cœurs utilisés, changé sans recharger le modèle.
+JNIEXPORT void JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_setThreads(JNIEnv *, jobject, jint n_threads) {
+    if (g_context) llama_set_n_threads(g_context, n_threads, n_threads);
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_systemInfo(JNIEnv *env, jobject) {
     return env->NewStringUTF(llama_print_system_info());

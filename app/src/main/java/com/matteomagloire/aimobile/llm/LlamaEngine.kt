@@ -51,6 +51,11 @@ class LlamaEngine {
 
     private var initialized = false
 
+    /** Cœurs utilisés pour les calculs : moins de cœurs, moins de chauffe. */
+    @Volatile
+    var threads: Int = DEFAULT_THREADS
+        private set
+
     /** Prompt système dont le KV est en tête du contexte (cache en mémoire), null sinon. */
     private var systemPromptInMemory: String? = null
 
@@ -64,7 +69,6 @@ class LlamaEngine {
         modelId: String,
         file: File,
         contextSize: Int = DEFAULT_CONTEXT,
-        threads: Int = DEFAULT_THREADS,
     ) = locked {
         val current = _state.value
         if (current is State.Ready && current.modelId == modelId) return@locked
@@ -79,6 +83,12 @@ class LlamaEngine {
         val code = LlamaNative.load(file.absolutePath, contextSize, threads)
         _state.value = if (code == 0) State.Ready(modelId, (System.nanoTime() - start) / 1_000_000)
         else State.Failed("Impossible de charger le modèle (code $code)")
+    }
+
+    /** Change le nombre de cœurs, pour ce modèle et les suivants. */
+    suspend fun setThreads(count: Int) = locked {
+        threads = count.coerceIn(MIN_THREADS, MAX_THREADS)
+        if (_state.value is State.Ready) LlamaNative.setThreads(threads)
     }
 
     /** [seed] négatif : graine aléatoire ; sinon réponses reproductibles. */
@@ -180,6 +190,8 @@ class LlamaEngine {
 
         /** 4 threads = cœurs X1 + A78 ; les petits A55 ralentissent. */
         const val DEFAULT_THREADS = 4
+        const val MIN_THREADS = 2
+        const val MAX_THREADS = 4
 
         /** Version de llama.cpp compilée dans l'app. */
         val buildRef: String by lazy { LlamaNative.buildRef() }

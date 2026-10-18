@@ -71,8 +71,8 @@ fun BenchScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeTab("Instruct", selected = !reasoning, enabled = !busy) { reasoning = false }
-                ModeTab("Réflexion", selected = reasoning, enabled = !busy) { reasoning = true }
+                ChoiceChip("Instruct", selected = !reasoning, enabled = !busy) { reasoning = false }
+                ChoiceChip("Réflexion", selected = reasoning, enabled = !busy) { reasoning = true }
             }
             Text(
                 "Trois versions 4 bits du même modèle. Axo pose nos 10 questions à chacune, avec les mêmes " +
@@ -139,22 +139,6 @@ fun BenchScreen(
                 AxoTextButton("Effacer cette comparaison", onClick = { onResetBench(reasoning) }, color = Axo.Muted)
             }
         }
-    }
-}
-
-@Composable
-private fun ModeTab(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .heightIn(min = 40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) Axo.Ember else Axo.Card)
-            .border(BorderStroke(1.dp, if (selected) Axo.AmberBorder else Axo.Line), RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = if (selected) Axo.Amber else Axo.TextSecondary)
     }
 }
 

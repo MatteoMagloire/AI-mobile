@@ -152,11 +152,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // Nombre de cœurs : appliqué tout de suite, sans recharger le modèle.
+        viewModelScope.launch {
+            settingsRepo.settings.map { it.threads }.distinctUntilChanged().collect { engine.setThreads(it) }
+        }
         watchDownloads()
         viewModelScope.launch(Dispatchers.IO) {
             // Charge la bibliothèque native hors du fil de l'interface.
             val info = try {
-                "llama.cpp ${LlamaEngine.buildRef} · ${LlamaEngine.DEFAULT_THREADS} cœurs · contexte ${LlamaEngine.DEFAULT_CONTEXT}"
+                "llama.cpp ${LlamaEngine.buildRef} · contexte ${LlamaEngine.DEFAULT_CONTEXT}"
             } catch (e: Throwable) {
                 ""
             }
@@ -218,6 +222,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 val settings = settingsRepo.settings.first()
                 val file = store.fileFor(model)
                 val turns = HistoryWindow.turns(_state.value.messages)
+                engine.setThreads(settings.threads)
                 val resumed = sessions.use {
                     if (engine.loadedModelId() != model.id) {
                         detach(engine)
@@ -479,6 +484,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Choisi dans le Test de vitesse ; vaut aussi pour la discussion. */
+    fun setThreads(count: Int) {
+        if (measure?.isActive == true) return
+        updateSettings { it.copy(threads = count.coerceIn(LlamaEngine.MIN_THREADS, LlamaEngine.MAX_THREADS)) }
+    }
+
     fun stopMeasure() {
         measure?.cancel()
     }
@@ -536,7 +547,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 batteryBefore = batteryBefore,
                 batteryAfter = DeviceStats.batteryTemperature(app),
                 thermalStatus = DeviceStats.thermalStatus(app),
-                threads = LlamaEngine.DEFAULT_THREADS,
+                threads = engine.threads,
             )
             val all = (_state.value.measure.speed + result).takeLast(20)
             updateMeasure { it.copy(speed = all) }
@@ -552,7 +563,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             ensureLoaded(model)
             val points = mutableListOf<EndurancePoint>()
             val start = System.currentTimeMillis()
-            fun result() = EnduranceResult(start, model.id, points.toList(), DeviceStats.thermalStatus(app))
+            fun result() = EnduranceResult(start, model.id, points.toList(), DeviceStats.thermalStatus(app), engine.threads)
             try {
                 while (System.currentTimeMillis() - start < Targets.ENDURANCE_MS) {
                     val elapsed = System.currentTimeMillis() - start

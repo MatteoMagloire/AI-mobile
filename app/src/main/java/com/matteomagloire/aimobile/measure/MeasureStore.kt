@@ -72,6 +72,7 @@ class MeasureStore(context: Context) {
                     )
                 },
                 thermalStatus = r.optInt("thermal"),
+                threads = r.optInt("threads", 4),
             )
         }
     } ?: emptyList()
@@ -84,6 +85,7 @@ class MeasureStore(context: Context) {
                         .put("time", r.time)
                         .put("model", r.modelId)
                         .put("thermal", r.thermalStatus)
+                        .put("threads", r.threads)
                         .put("points", JSONArray().apply {
                             r.points.forEach { p ->
                                 put(JSONObject().put("s", p.seconds).put("tps", p.tokensPerSecond.finite()).putFloat("battery", p.batteryC))

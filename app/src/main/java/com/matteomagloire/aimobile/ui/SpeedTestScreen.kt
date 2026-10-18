@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.measure.DeviceStats
 import com.matteomagloire.aimobile.measure.EndurancePoint
 import com.matteomagloire.aimobile.measure.EnduranceResult
@@ -45,6 +46,7 @@ fun SpeedTestScreen(
     engineInfo: String,
     onRunSpeed: () -> Unit,
     onRunEndurance: () -> Unit,
+    onThreadsChange: (Int) -> Unit,
     onStop: () -> Unit,
     onDismissError: () -> Unit,
     onBack: () -> Unit,
@@ -68,6 +70,21 @@ fun SpeedTestScreen(
             measure.error?.let {
                 Text(it, color = Axo.Blush, style = MaterialTheme.typography.bodyMedium)
                 AxoTextButton("OK", onClick = onDismissError)
+            }
+
+            AxoCard {
+                Text("Cœurs utilisés", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "4 cœurs : le plus rapide. 3 ou 2 : un peu plus lent, mais le téléphone chauffe moins. " +
+                        "Le choix vaut aussi pour la discussion.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Axo.Muted,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (n in LlamaEngine.MIN_THREADS..LlamaEngine.MAX_THREADS) {
+                        ChoiceChip("$n cœurs", selected = state.settings.threads == n, enabled = running == null) { onThreadsChange(n) }
+                    }
+                }
             }
 
             AxoCard(highlighted = running == MeasureKind.SPEED) {
@@ -160,7 +177,7 @@ private fun SpeedResultCard(r: SpeedResult, latest: Boolean) {
     AxoCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (latest) "Dernier résultat" else "Résultat", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text("${quantOf(r.modelId)} · ${date(r.time)}", style = MonoStyle, color = Axo.Muted)
+            Text("${quantOf(r.modelId)} · ${r.threads} cœurs · ${date(r.time)}", style = MonoStyle, color = Axo.Muted)
         }
         MetricRow(
             "Premier mot",
@@ -197,7 +214,7 @@ private fun EnduranceCard(r: EnduranceResult) {
     AxoCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Dernière endurance", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text("${quantOf(r.modelId)} · ${date(r.time)}", style = MonoStyle, color = Axo.Muted)
+            Text("${quantOf(r.modelId)} · ${r.threads} cœurs · ${date(r.time)}", style = MonoStyle, color = Axo.Muted)
         }
         if (r.points.size >= 2) SpeedChart(r.points)
         MetricRow(
@@ -218,7 +235,7 @@ private fun HistoryRow(r: SpeedResult) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(date(r.time), style = MaterialTheme.typography.bodySmall, color = Axo.Muted, modifier = Modifier.weight(1f))
         Text(
-            "${quantOf(r.modelId)}  ${seconds(r.firstWordMs)}  ${tokensPerSecond(r.tokensPerSecond)}  ${gigabytes(r.rssBytes)}",
+            "${quantOf(r.modelId)} ${r.threads}c  ${seconds(r.firstWordMs)}  ${tokensPerSecond(r.tokensPerSecond)}  ${gigabytes(r.rssBytes)}",
             style = MonoStyle,
         )
     }
