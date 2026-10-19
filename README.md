@@ -19,7 +19,7 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
 - **Cerveau en direct** : chaque geste du Cerveau (chercher, lire, suivre un lien, réveiller une note, écrire) est un `BrainEvent` que `brain/LiveBrain.kt` déroule à l'écran, chaque geste assez long pour se voir sans jamais faire attendre Axo. Le graphe l'anime (éclat, battement, boule sur le lien suivi, traînée) et glisse vers la note où il travaille ; une bande au-dessus de la réponse montre les notes touchées en arcs ; « Rejouer » remontre le dernier échange au ralenti. Les deux se coupent dans Réglages > Cerveau.
 - **Test de vitesse** (Réglages > Mesures) : premier mot, vitesse d'écriture, lecture d'un long message, mémoire utilisée et chauffe, avec les cibles du cahier des charges. Un test d'endurance de 10 minutes compare la vitesse de la fin à celle du début.
 - **Comparer les fichiers** (Réglages > Mesures) : Q4_K_M, UD-Q4_K_XL et Q4_0 répondent aux 10 mêmes questions, puis tu votes à l'aveugle. L'app recommande le meilleur fichier et peut l'utiliser tout de suite.
-- Réglages : créativité, longueur max, personnalité d'Axo (prompt système), affichage de la vitesse, Wi-Fi uniquement.
+- Réglages : créativité (0,15 par défaut, la valeur conseillée par Mistral pour Ministral 3 Instruct ; le mode Réflexion garde 0,7), longueur max, personnalité d'Axo (prompt système), affichage de la vitesse, Wi-Fi uniquement.
 - Fonctionne entièrement en mode avion une fois le modèle téléchargé.
 - Vérifie les nouvelles versions : tout de suite si internet est là, sinon dès le retour de la connexion (WorkManager), puis une fois par jour.
 

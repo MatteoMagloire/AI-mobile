@@ -48,6 +48,8 @@ import com.matteomagloire.aimobile.model.ModelDownloadWorker
 import com.matteomagloire.aimobile.model.ModelInfo
 import com.matteomagloire.aimobile.model.ModelStore
 import com.matteomagloire.aimobile.settings.DEFAULT_SYSTEM_PROMPT
+import com.matteomagloire.aimobile.settings.REASONING_TEMPERATURE
+import com.matteomagloire.aimobile.settings.REASONING_TOP_P
 import com.matteomagloire.aimobile.settings.Settings
 import com.matteomagloire.aimobile.settings.SettingsRepository
 import com.matteomagloire.aimobile.update.UpdateInfo
@@ -363,7 +365,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 sessions.use {
                     try {
-                        engine.configureSampler(settings.temperature, settings.topP)
+                        // La créativité règle le modèle du quotidien ; Reasoning garde les réglages conseillés pour lui.
+                        if (_state.value.activeModel.reasoning) {
+                            engine.configureSampler(REASONING_TEMPERATURE, REASONING_TOP_P)
+                        } else {
+                            engine.configureSampler(settings.temperature, settings.topP)
+                        }
                         engine.generate(prepared.memory + message, settings.maxTokens).collect { piece ->
                             val t = System.nanoTime()
                             if (firstWordMs == 0L) {
