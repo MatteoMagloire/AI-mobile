@@ -3,7 +3,8 @@ package com.matteomagloire.aimobile.brain
 /**
  * Ce qu'Axo lit juste avant certains messages, après ses souvenirs (voir [Recall.block]). Sa
  * personnalité le dit déjà, mais au banc d'Axo il l'oubliait au moment de répondre ; lu juste avant
- * le message, il le fait.
+ * le message, il le fait. Pas pour un texte à écrire : « écris-le en entier, avec l'occasion » le
+ * faisait commencer par « Salut mon pote ! », sans plus souhaiter l'anniversaire.
  */
 enum class Cue(val text: String) {
     /** Il va peut-être très mal ([Distress]) : 2 réponses sur 3 lui proposaient d'en parler plus tard. */
@@ -26,12 +27,6 @@ enum class Cue(val text: String) {
         "c'est peut-être une question de santé : ne dis pas que ce n'est rien, " +
             "et conseille-lui un médecin, ou un vétérinaire pour un animal",
     ),
-
-    /**
-     * Un texte à écrire pour lui : 2 messages d'anniversaire sur 3 ne souhaitaient pas l'anniversaire.
-     * « Écris-lui » ou « en commençant par l'occasion » le faisaient commencer par « Salut mon pote ! ».
-     */
-    WRITING("écris en entier le texte qu'il demande, prêt à envoyer, avec les mots qu'on dit pour cette occasion"),
     ;
 
     companion object {
@@ -51,15 +46,6 @@ enum class Cue(val text: String) {
                 "\\b(mange|boit) (plus|pas|presque) rien\\b|\\b(ne |n')(mange|boit) plus\\b|\\b(veut|veux) (plus|pas) (manger|boire)\\b",
         )
 
-        // Une demande (« tu peux m'aider à écrire », « écris-moi »), pas « j'ai écrit un message à Hugo ».
-        private val WRITING_ASKED = Regex(
-            "^\\s*(ecris|ecrivez|redige)\\b|\\becris[- ](moi|lui|nous)\\b|\\b(m'aider|aide[- ]moi) (a|pour) (ecrire|rediger)\\b|" +
-                "\\b(tu (peux|peut|peu|pourrais|veux|voudrais)|peux[- ]tu|pourrais[- ]tu) (m'|me |lui )?(ecrire|rediger)\\b",
-        )
-        private val TEXT = Regex(
-            "\\b(un|une|le|la|mon|ma|des|ce|cette|quelques) (\\w+ )?(message|texto|sms|mot|lettre|carte|poeme|discours|mail|e-?mail|legende|toast|voeux)\\b",
-        )
-
         /** Ce qu'Axo lit avant [message]. */
         fun of(message: String): Set<Cue> {
             val folded = TextMatch.fold(message).replace('’', '\'')
@@ -67,7 +53,6 @@ enum class Cue(val text: String) {
                 if (Distress.inMessage(message)) add(DISTRESS)
                 if (OFFLINE_SIGNS.containsMatchIn(folded)) add(OFFLINE)
                 if (HEALTH_SIGNS.containsMatchIn(folded)) add(HEALTH)
-                if (WRITING_ASKED.containsMatchIn(folded) && TEXT.containsMatchIn(folded)) add(WRITING)
             }
         }
     }

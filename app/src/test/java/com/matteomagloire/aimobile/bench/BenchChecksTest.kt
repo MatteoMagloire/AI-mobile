@@ -99,7 +99,6 @@ class BenchChecksTest {
             mapOf(
                 "meteo" to setOf(Cue.OFFLINE), "actualite" to setOf(Cue.OFFLINE),
                 "moral-au-plus-bas" to setOf(Cue.DISTRESS), "idees-noires" to setOf(Cue.DISTRESS),
-                "message-a-ecrire" to setOf(Cue.WRITING), "message-anniversaire" to setOf(Cue.WRITING),
                 "chat-malade" to setOf(Cue.HEALTH),
             ),
             BENCH_CASES.associate { it.id to Cue.of(it.message) }.filterValues { it.isNotEmpty() },

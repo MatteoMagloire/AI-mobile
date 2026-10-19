@@ -35,17 +35,7 @@ class CueTest {
     }
 
     @Test
-    fun writing() {
-        cued(
-            Cue.WRITING,
-            "tu peu m'aider a ecrire un message pour l'anniv de ma mere", "Tu peux m'aider à écrire un message pour l'anniversaire de ma mère ?",
-            "écris-moi un petit mot pour Honorine", "Écris un poème pour la fête des pères",
-        )
-        notCued(Cue.WRITING, "j'ai écrit un message à Hugo, il répond pas", "raconte moi une blague", "tu peux m'aider à trouver un mot ?")
-    }
-
-    @Test
-    fun distressComesFirst() {
+    fun onlyWhatTheMessageSays() {
         assertEquals(setOf(Cue.DISTRESS), Cue.of("je veux plus vivre, je sers a rien"))
         assertEquals(emptySet<Cue>(), Cue.of("salut sa va ?"))
     }
