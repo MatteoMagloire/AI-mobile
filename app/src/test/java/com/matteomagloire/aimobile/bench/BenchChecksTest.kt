@@ -49,6 +49,21 @@ class BenchChecksTest {
         assertEquals(listOf("réponse vide"), styleFailures(" "))
     }
 
+    private fun failures(case: String, answer: String) = BENCH_CASES.single { it.id == case }.checks.mapNotNull { it.failure(answer) }
+
+    @Test
+    fun casesCatchWhatWasSeenAtTheBench() {
+        // Pas d'infos ni de météo, mais un décor inventé, comme s'il était dehors.
+        assertEquals(listOf("dit « le vent », « le ciel », « nuage »"), failures("actualite", "Pas d’infos, juste le vent qui grésille et le ciel un peu nuageux."))
+        assertEquals(listOf("dit « nuage »"), failures("meteo", "Je ne peux pas vérifier, mais je peux te parler du temps en regardant les nuages… 😄"))
+        // Pas de réveil, mais un rappel promis.
+        assertEquals(listOf("dit « je te rappelle »"), failures("reveil", "Je ne fais pas de réveils 😄 Tu veux que je te rappelle en te disant quoi ?"))
+        // Ce qu'un ami dirait passe.
+        assertEquals(emptyList<String>(), failures("reveil", "Non, je ne peux pas. Mets une alarme sur ton téléphone !"))
+        assertEquals(emptyList<String>(), failures("bonne-nouvelle", "Ohhh, c’est trop cool ! 🎉 Tu vas pouvoir te balader."))
+        assertEquals(emptyList<String>(), failures("actualite", "Non, pas d’info : je n’ai pas internet. Il s’est passé quoi ?"))
+    }
+
     @Test
     fun wordsIgnoreCaseAccentsAndApostrophes() {
         assertNull(Checks.says("Matteo").failure("Tu t'appelles MATTEO !"))
