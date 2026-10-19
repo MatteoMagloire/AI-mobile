@@ -53,10 +53,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.matteomagloire.aimobile.brain.LiveBrain
+import com.matteomagloire.aimobile.chat.AnswerText
 import com.matteomagloire.aimobile.chat.ChatMessage
 import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.ui.theme.Axo
@@ -318,8 +320,12 @@ private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: B
             }
         }
         if (message.text.isNotEmpty() || (message.thinking.isEmpty())) {
+            // Gras et italique sans leurs astérisques, sans les actions entre astérisques.
+            val styled = remember(message.text) { AnswerText.styled(message.text) }
             val text = buildAnnotatedString {
-                append(message.text)
+                append(styled.text)
+                styled.bold.forEach { addStyle(SpanStyle(fontWeight = FontWeight.SemiBold), it.first, it.last + 1) }
+                styled.italic.forEach { addStyle(SpanStyle(fontStyle = FontStyle.Italic), it.first, it.last + 1) }
                 if (streaming) withStyle(SpanStyle(color = Axo.Amber)) { append(" ▍") }
             }
             Text(
