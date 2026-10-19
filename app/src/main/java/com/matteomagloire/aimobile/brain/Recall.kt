@@ -155,7 +155,8 @@ object Recall {
     /**
      * Ce qu'Axo relit sur lui avant [message] : s'il parle de lui, son prénom (aucune note ne le dit,
      * Axo le sait toujours) puis les derniers faits de « Moi », aussi relus si [always]. S'il demande
-     * son prénom, le prénom seul : avec le reste, Axo récitait tout ce qu'il sait de lui.
+     * son prénom, le prénom seul : avec le reste, Axo récitait tout ce qu'il sait de lui. Lui dire en
+     * plus qu'il demande son prénom l'a fait parler du sien, au banc : « Moi c'est Axo. Et toi ? ».
      */
     fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
         val askName = asksName(message)
@@ -173,20 +174,17 @@ object Recall {
      * Ce que le modèle lit avant le message. Vide s'il n'y a rien à dire : le message est lu tel quel.
      * [forgotten] : faits qu'il vient d'oublier à la demande de l'utilisateur ; [nothingToForget] : la
      * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message ;
-     * [asksName] : il demande son prénom (« tu c'est comment je m'appelle » se lisait « c'est comment
-     * ? », et « son prénom » se lisait comme celui d'Axo) ; [distress] : il va peut-être très mal
-     * ([Distress]).
+     * [distress] : il va peut-être très mal ([Distress]).
      */
     fun block(
         facts: List<String>,
         forgotten: List<String> = emptyList(),
         nothingToForget: Boolean = false,
         remember: Boolean = false,
-        asksName: Boolean = false,
         distress: Boolean = false,
         name: String = USER_NAME,
     ): String {
-        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && !asksName && !distress) return ""
+        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && !distress) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
@@ -202,7 +200,7 @@ object Recall {
                 append("[Pour Axo : il va peut-être très mal. Prends-le au sérieux, dis-lui que tu es là pour lui, ")
                 append("et qu'il peut appeler le 3114 (gratuit, jour et nuit) ou parler tout de suite à un proche]\n")
             }
-            append(if (asksName) "[Message de $name, qui te demande comment il s'appelle]\n" else "[Message de $name]\n")
+            append("[Message de $name]\n")
         }
     }
 }

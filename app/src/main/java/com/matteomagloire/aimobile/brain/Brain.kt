@@ -181,7 +181,7 @@ class Brain(
         // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
         val used = (r.kept + r.followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
         if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
-        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember, asksName = Recall.asksName(message), distress = distress))
+        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember, distress = distress))
     }
 
     /** Montre à l'écran ce qu'Axo vient de faire avant de répondre : chercher, lire, suivre un lien, réveiller. */
