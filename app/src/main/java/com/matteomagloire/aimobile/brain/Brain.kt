@@ -182,11 +182,7 @@ class Brain(
         // Axo lit les faits sans les crochets des liens écrits à la main.
         val hits = top.map { NoteLinks.plain(it.fact.text) }
         val hops = Recall.follow(notes, top, message, exclude = given + hits)
-        val aboutMe = if (startOfSession || Recall.asksAboutMe(message)) {
-            Recall.aboutMe(notes, 4, given + hits).map { NoteLinks.plain(it.text) }
-        } else {
-            emptyList()
-        }
+        val aboutMe = Recall.aboutMe(message, notes, always = startOfSession, limit = 4, exclude = given + hits)
         // Peu de lignes : chaque mot lu retarde le premier mot de la réponse. Les liens suivis passent en dernier.
         var chars = 0
         val facts = (aboutMe + hits + hops.map { NoteLinks.plain(it.fact.text) }).distinct()

@@ -79,6 +79,36 @@ class RecallAndCommandsTest {
     }
 
     @Test
+    fun questionsAboutMeWrittenFast() {
+        // « tu c'est » pour « tu sais » : écrit vite, c'est toujours une question sur lui.
+        assertTrue(Recall.asksAboutMe("tu c'est comment je m'appelle"))
+        assertTrue(Recall.asksAboutMe("tu sai ce que j'aime ?"))
+        assertTrue(Recall.asksAboutMe("tu te rapelle de mon chat"))
+        assertFalse(Recall.asksAboutMe("Je te rappelle demain"))
+        assertFalse(Recall.asksAboutMe("tu cherches quoi ?"))
+    }
+
+    @Test
+    fun askingMyNameGivesIt() {
+        assertTrue(Recall.asksName("tu c'est comment je m'appelle"))
+        assertTrue(Recall.asksName("C'est quoi mon prénom ?"))
+        assertTrue(Recall.asksName("je m'appelle comment déjà"))
+        assertFalse(Recall.asksName("Comment tu t'appelles ?"))
+        assertFalse(Recall.asksName("Mon nombre préféré c'est 7"))
+        // Aucune note ne dit son prénom : Axo le relit d'abord, puis ce qu'il sait de lui.
+        assertEquals(
+            listOf("Il s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris."),
+            Recall.aboutMe("tu c'est comment je m'appelle", notes, always = false, limit = 2, exclude = emptySet()),
+        )
+        assertEquals(listOf("Il s'appelle Matteo."), Recall.aboutMe("Tu connais mon prénom ?", emptyList(), always = false, limit = 4, exclude = emptySet()))
+        // Déjà donné il y a peu : inutile de le redire.
+        assertEquals(emptyList<String>(), Recall.aboutMe("Et mon nom ?", emptyList(), always = false, limit = 4, exclude = setOf("Il s'appelle Matteo.")))
+        // Un autre message : rien, sauf en début de conversation.
+        assertEquals(emptyList<String>(), Recall.aboutMe("Il fait beau", notes, always = false, limit = 2, exclude = emptySet()))
+        assertEquals(listOf("Matteo aime le jazz.", "Matteo habite à Paris."), Recall.aboutMe("Il fait beau", notes, always = true, limit = 2, exclude = emptySet()))
+    }
+
+    @Test
     fun memoryBlock() {
         assertEquals("", Recall.block(emptyList()))
         val block = Recall.block(listOf("Matteo a 23 ans."))
