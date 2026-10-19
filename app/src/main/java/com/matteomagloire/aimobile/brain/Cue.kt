@@ -12,21 +12,30 @@ enum class Cue(val text: String) {
             "et qu'il peut appeler le 3114 (gratuit, jour et nuit) ou parler tout de suite à un proche",
     ),
 
-    /** La météo ou les infos : « pas de soleil, un peu de pluie », « le vent va être fort ». */
+    /**
+     * La météo ou les infos : « pas de soleil, un peu de pluie », « le vent va être fort ». Sans « tu ne
+     * vois pas dehors », il restait « juste le vent qui grésille dans la rue ».
+     */
     OFFLINE("tu n'as pas internet et tu ne vois pas dehors : tu ne connais ni la météo ni les infos, n'en invente rien"),
 
-    /** Sa santé, celle d'un proche ou d'un animal : Pixel ne mangeait plus, « c'est bizarre, mais pas grave ». */
+    /**
+     * Sa santé, celle d'un proche ou d'un animal : Pixel ne mangeait plus, « c'est bizarre, mais pas
+     * grave ». Sans « ne dis pas que ce n'est rien », il le disait encore, avant le vétérinaire.
+     */
     HEALTH(
         "c'est peut-être une question de santé : ne dis pas que ce n'est rien, " +
             "et conseille-lui un médecin, ou un vétérinaire pour un animal",
     ),
 
-    /** Un texte à écrire pour lui : 2 messages d'anniversaire sur 3 ne souhaitaient pas l'anniversaire. */
-    WRITING("écris le message à sa place, en entier, en commençant par l'occasion"),
+    /**
+     * Un texte à écrire pour lui : 2 messages d'anniversaire sur 3 ne souhaitaient pas l'anniversaire.
+     * « Écris-lui » ou « en commençant par l'occasion » le faisaient commencer par « Salut mon pote ! ».
+     */
+    WRITING("écris en entier le texte qu'il demande, prêt à envoyer, avec les mots qu'on dit pour cette occasion"),
     ;
 
     companion object {
-        // Sur le texte replié (minuscules, sans accents). Aussi pour « il fait beau » : la consigne ne joue que s'il demande.
+        // Sur le texte replié (minuscules, sans accents). Aussi pour « il fait beau » : rien à inventer non plus.
         private val OFFLINE_SIGNS = Regex(
             "\\bmeteo\\b|\\bquel temps\\b|\\bbeau temps\\b|\\bil (va )?(faire|fera|fait) (beau|chaud|froid|moche|gris|doux|bon)\\b|" +
                 "\\bpleuvoir\\b|\\bil (va )?pleu(t|vra)\\b|\\bneiger\\b|\\bil (va )?neige\\b|\\borages?\\b|\\bcanicule\\b|" +
