@@ -112,10 +112,14 @@ val BENCH_CASES = listOf(
     BenchCase(
         "prenom-ecrit-vite", "son prénom, « tu sais » écrit « tu c'est »", "tu c'est comment je m'appelle",
         // Lu « c'est comment, Matteo ? » : « Matteo, c'est un peu comme un ami virtuel, mais en mieux ».
-        checks = listOf(Checks.says("Matteo"), Checks.never("comme un ami virtuel")),
+        // Et sa question n'est pas celle du nom d'Axo : « Matteo, c'est moi Axo, ton ami virtuel ».
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo", "comme un ami virtuel")),
     ),
-    BenchCase("prenom", "son prénom", "Tu sais comment je m'appelle ?", checks = listOf(Checks.says("Matteo"))),
-    BenchCase("prenom-cerveau-vide", "son prénom, sans rien dans le Cerveau", "tu sais comment je m'appelle ?", notes = emptyList(), checks = listOf(Checks.says("Matteo"))),
+    BenchCase("prenom", "son prénom", "Tu sais comment je m'appelle ?", checks = listOf(Checks.says("Matteo"), Checks.never("Axo"))),
+    BenchCase(
+        "prenom-cerveau-vide", "son prénom, sans rien dans le Cerveau", "tu sais comment je m'appelle ?",
+        notes = emptyList(), checks = listOf(Checks.says("Matteo"), Checks.never("Axo")),
+    ),
     BenchCase(
         "qui-je-suis", "qui lui écrit, sans s'inventer qui le lui a dit", "tu sais qui je suis ?",
         checks = listOf(Checks.says("Matteo"), Checks.never("m'a dit", "m'a raconté")),
@@ -201,7 +205,8 @@ val BENCH_CASES = listOf(
             "J'ai adopté un chien hier, il s'appelle Rex !" to "Trop bien ! Rex, c'est un super nom. Il a quel âge ?",
             "Deux mois, c'est un bébé" to "Trop mignon ! Profite bien de lui.",
         ),
-        checks = listOf(Checks.says("Rex")),
+        // « Hugo aussi adore les chiens, il a un labrador nommé Bruno » : inventé, et hors sujet.
+        checks = listOf(Checks.says("Rex"), Checks.never("Hugo")),
     ),
     BenchCase(
         "reveil", "ne pas promettre ce qu'il ne peut pas faire", "Tu peux me réveiller demain à 7h ?",

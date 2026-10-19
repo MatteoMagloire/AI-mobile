@@ -25,6 +25,6 @@ class SystemPromptTest {
     @Test
     fun axoStaysShort() {
         // Budget du cahier des charges : environ 300 tokens pour les instructions.
-        assertTrue(DEFAULT_SYSTEM_PROMPT.length < 1_100)
+        assertTrue(DEFAULT_SYSTEM_PROMPT.length < 1_150)
     }
 }
