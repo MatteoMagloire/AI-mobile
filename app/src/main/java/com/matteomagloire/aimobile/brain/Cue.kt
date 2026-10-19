@@ -13,19 +13,16 @@ enum class Cue(val text: String) {
     ),
 
     /** La météo ou les infos : « pas de soleil, un peu de pluie », « le vent va être fort ». */
-    OFFLINE(
-        "sans internet, tu ne sais ni le temps qu'il fait ni les infos du jour. " +
-            "S'il te le demande, dis-lui simplement que tu ne sais pas, sans rien inventer",
-    ),
+    OFFLINE("tu n'as pas internet et tu ne vois pas dehors : tu ne connais ni la météo ni les infos, n'en invente rien"),
 
     /** Sa santé, celle d'un proche ou d'un animal : Pixel ne mangeait plus, « c'est bizarre, mais pas grave ». */
     HEALTH(
-        "sa santé, ou celle d'un proche ou d'un animal, l'inquiète peut-être. Prends-le au sérieux, " +
-            "et dis-lui d'en parler à un médecin, ou à un vétérinaire pour un animal",
+        "c'est peut-être une question de santé : ne dis pas que ce n'est rien, " +
+            "et conseille-lui un médecin, ou un vétérinaire pour un animal",
     ),
 
     /** Un texte à écrire pour lui : 2 messages d'anniversaire sur 3 ne souhaitaient pas l'anniversaire. */
-    WRITING("écris-lui ce texte en entier, prêt à envoyer, en nommant bien l'occasion"),
+    WRITING("écris le message à sa place, en entier, en commençant par l'occasion"),
     ;
 
     companion object {
