@@ -147,7 +147,7 @@ class RecallAndCommandsTest {
         assertTrue(remember.contains("c'est noté") && remember.endsWith("[Message de Matteo]\n"))
         // Sa question est dite : « tu c'est comment je m'appelle » se lisait « c'est comment ? ».
         assertEquals(
-            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Il s'appelle Matteo.\n[Message de Matteo, qui te demande son prénom]\n",
+            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Il s'appelle Matteo.\n[Message de Matteo, qui te demande comment il s'appelle]\n",
             Recall.block(listOf("Il s'appelle Matteo."), asksName = true),
         )
         val distress = Recall.block(emptyList(), distress = true)

@@ -174,7 +174,8 @@ object Recall {
      * [forgotten] : faits qu'il vient d'oublier à la demande de l'utilisateur ; [nothingToForget] : la
      * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message ;
      * [asksName] : il demande son prénom (« tu c'est comment je m'appelle » se lisait « c'est comment
-     * ? ») ; [distress] : il va peut-être très mal ([Distress]).
+     * ? », et « son prénom » se lisait comme celui d'Axo) ; [distress] : il va peut-être très mal
+     * ([Distress]).
      */
     fun block(
         facts: List<String>,
@@ -201,7 +202,7 @@ object Recall {
                 append("[Pour Axo : il va peut-être très mal. Prends-le au sérieux, dis-lui que tu es là pour lui, ")
                 append("et qu'il peut appeler le 3114 (gratuit, jour et nuit) ou parler tout de suite à un proche]\n")
             }
-            append(if (asksName) "[Message de $name, qui te demande son prénom]\n" else "[Message de $name]\n")
+            append(if (asksName) "[Message de $name, qui te demande comment il s'appelle]\n" else "[Message de $name]\n")
         }
     }
 }
