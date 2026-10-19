@@ -34,6 +34,9 @@ class BenchChecksTest {
         assertEquals(listOf("un titre"), styleFailures("## Recette\nDes pâtes."))
         assertEquals(listOf("une liste de 2 lignes"), styleFailures("Deux idées :\n- un ciné\n- un resto"))
         assertEquals(listOf("« n'hesite pas »"), styleFailures("N’hésite pas à me redemander."))
+        // Vu au banc : il cite sa mémoire, et s'invente des souvenirs.
+        assertEquals(listOf("cite « [Mémoire d'Axo] »"), styleFailures("[Mémoire d’Axo] : tu as l’air stressé depuis hier."))
+        assertEquals(listOf("cite « [Mémoire d'Axo] »"), styleFailures("Ma mémoire d'Axo dit que tu vis au Havre."))
         assertEquals(emptyList<String>(), styleFailures("Salut Matteo ! Ça va bien, et toi ? 😄"))
         // Une liste demandée passe.
         assertEquals(emptyList<String>(), styleFailures("Deux idées :\n- un ciné\n- un resto", long = true))

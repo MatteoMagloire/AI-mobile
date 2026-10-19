@@ -34,6 +34,9 @@ class AxoBenchTest {
         val model = ModelCatalog.byId(System.getenv("AXO_BENCH_MODEL_ID").orEmpty()) ?: ModelCatalog.INSTRUCT_Q40
         assertTrue("Fichier du modèle introuvable : $file", file.isFile)
         val seeds = System.getenv("AXO_BENCH_SEEDS").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.ifEmpty { listOf(1) }
+        // Une autre personnalité à essayer, sans toucher à l'appli (« \n » pour aller à la ligne).
+        val trial = System.getenv("AXO_BENCH_PROMPT").orEmpty().replace("\\n", "\n").trim().ifEmpty { null }
+        val prompt = trial ?: DEFAULT_SYSTEM_PROMPT
         val settings = Settings()
 
         val engine = LlamaEngine()
@@ -41,7 +44,7 @@ class AxoBenchTest {
         engine.load(model.id, file)
         val state = engine.state.value
         assertTrue("Modèle pas chargé : $state", state is LlamaEngine.State.Ready)
-        engine.startConversation(DEFAULT_SYSTEM_PROMPT)
+        engine.startConversation(prompt)
         val promptTokens = engine.usage().systemPromptTokens
 
         val results = LinkedHashMap<BenchCase, List<Answer>>()
@@ -49,7 +52,7 @@ class AxoBenchTest {
             val memory = memoryFor(case)
             results[case] = seeds.map { seed ->
                 // Comme à la réouverture de l'appli : la personnalité (gardée en mémoire), puis les échanges d'avant.
-                engine.startConversation(DEFAULT_SYSTEM_PROMPT)
+                engine.startConversation(prompt)
                 engine.replay(HistoryWindow.select(HistoryWindow.turns(history(case))))
                 engine.configureSampler(settings.temperature, settings.topP, seed)
                 val start = System.nanoTime()
@@ -65,7 +68,7 @@ class AxoBenchTest {
         }
         engine.unload()
 
-        val report = report(model.fileName, seeds, promptTokens, settings, results)
+        val report = report(model.fileName, seeds, trial, prompt, promptTokens, settings, results)
         File("build/axo-bench").apply { mkdirs() }.resolve("report.md").writeText(report)
         val failed = results.flatMap { (case, answers) -> answers.filter { it.failures.isNotEmpty() }.map { case.id } }
         assertTrue("Réponses qui ratent : ${failed.joinToString()} (voir build/axo-bench/report.md)", failed.isEmpty())
@@ -84,6 +87,8 @@ class AxoBenchTest {
     private fun report(
         modelFile: String,
         seeds: List<Int>,
+        trial: String?,
+        prompt: String,
         promptTokens: Int,
         settings: Settings,
         results: Map<BenchCase, List<Answer>>,
@@ -97,8 +102,14 @@ class AxoBenchTest {
                 "graines ${seeds.joinToString()} · ${settings.maxTokens} tokens au plus",
         )
         appendLine()
-        appendLine("Personnalité : $promptTokens tokens (${DEFAULT_SYSTEM_PROMPT.length} caractères)")
+        appendLine("Personnalité ${if (trial == null) "de l'appli" else "à l'essai"} : $promptTokens tokens (${prompt.length} caractères)")
         appendLine()
+        if (trial != null) {
+            appendLine("```")
+            appendLine(trial)
+            appendLine("```")
+            appendLine()
+        }
         appendLine("**$passed réponses sur ${all.size} passent.**")
         appendLine()
         appendLine("| Cas | Ce qu'on vérifie | " + seeds.joinToString(" | ") { "Graine $it" } + " |")

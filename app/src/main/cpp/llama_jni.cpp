@@ -19,6 +19,8 @@
 #include "llama.h"
 #include "sampling.h"
 
+#include "jni_strings.h"
+
 #ifndef LLAMA_CPP_REF
 #define LLAMA_CPP_REF "inconnu"
 #endif
@@ -133,13 +135,6 @@ void android_log_callback(ggml_log_level level, const char *text, void *) {
     (void) level;
     (void) text;
 #endif
-}
-
-std::string to_string(JNIEnv *env, jstring s) {
-    const char *chars = env->GetStringUTFChars(s, nullptr);
-    std::string out(chars);
-    env->ReleaseStringUTFChars(s, chars);
-    return out;
 }
 
 bool is_valid_utf8(const std::string &s) {
@@ -528,7 +523,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_nextToken(JNIEnv *env, jobject)
     g_cached_chars += common_token_to_piece(g_context, id);
     if (!is_valid_utf8(g_cached_chars)) return env->NewStringUTF("");
 
-    jstring out = env->NewStringUTF(g_cached_chars.c_str());
+    jstring out = to_jstring(env, g_cached_chars);
     g_assistant_ss << g_cached_chars;
     g_cached_chars.clear();
     return out;
@@ -807,7 +802,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_taskStep(
     answer.role = ROLE_ASSISTANT;
     answer.content = out;
     g_task_msgs.push_back(answer);
-    return env->NewStringUTF(out.c_str());
+    return to_jstring(env, out);
 }
 
 JNIEXPORT jint JNICALL

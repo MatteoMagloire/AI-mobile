@@ -61,6 +61,8 @@ object Checks {
         Check("ni actions ni gras entre astérisques") { a -> ACTION.find(a)?.let { "« ${it.value} »" } },
         Check("pas de titres") { a -> HEADING.find(a)?.let { "un titre" } },
         Check("pas de formules d'assistant") { a -> ASSISTANT.firstOrNull { has(a, it) }?.let { "« $it »" } },
+        // Ses souvenirs lui arrivent sous « [Mémoire d'Axo] » : il s'en sert, sans les citer ni en écrire.
+        Check("ne cite pas sa mémoire") { a -> if (has(a, "[memoire") || has(a, "memoire d'axo")) "cite « [Mémoire d'Axo] »" else null },
         if (long) null else Check("pas de liste") { a -> LIST_ITEM.findAll(a).count().takeIf { it >= 2 }?.let { "une liste de $it lignes" } },
         shorterThan(if (long) MAX_CHARS_LONG else MAX_CHARS),
         Check("pas vide") { a -> if (a.isBlank()) "réponse vide" else null },
@@ -163,8 +165,8 @@ val BENCH_CASES = listOf(
         checks = listOf(Checks.says("23")),
     ),
     BenchCase(
-        "retiens", "« retiens que… »", "Retiens que mon code de casier c'est 4721",
-        checks = listOf(Checks.saysOneOf("retenu", "noté", "note", "retiens", "4721")),
+        "retiens", "« retiens que… » : il confirme, simplement", "Retiens que mon code de casier c'est 4721",
+        checks = listOf(Checks.saysOneOf("noté", "retenu", "enregistré", "mémorisé"), Checks.shorterThan(300)),
     ),
     BenchCase("liste-demandee", "une liste quand il en demande une", "Donne moi 3 idées de sorties pour ce week-end", long = true),
     BenchCase(
