@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.matteomagloire.aimobile.brain.JournalEntry
+import com.matteomagloire.aimobile.brain.LiveBrain
 import com.matteomagloire.aimobile.brain.Note
 import com.matteomagloire.aimobile.brain.NoteFilter
 import com.matteomagloire.aimobile.brain.NoteLinks
@@ -57,14 +58,17 @@ private const val JOURNAL_ROWS = 20
 /**
  * Le Cerveau, en trois onglets : les notes d'Axo (« Moi » d'abord, la recherche, et ce qu'il a fait de
  * tes derniers messages), le graphe de leurs liens, et les notes en veille. [view] garde l'onglet, la
- * recherche et le graphe quand on ouvre une note puis qu'on revient.
+ * recherche et le graphe quand on ouvre une note puis qu'on revient ; [live] montre Axo au travail
+ * dans le graphe.
  */
 @Composable
 fun BrainScreen(
     state: ChatUiState,
     view: BrainView,
+    live: LiveBrain,
     onOpenNote: (String) -> Unit,
     onUndo: (JournalEntry) -> Unit,
+    onFollowChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val brain = state.brain
@@ -85,7 +89,17 @@ fun BrainScreen(
         BrainTabs(view.tab) { view.tab = it }
         when (view.tab) {
             BrainTab.NOTES -> NotesTab(brain, view, dormant, onOpenNote, onUndo)
-            BrainTab.GRAPH -> BrainGraph(brain.notes, brain.links, dormant, view, onOpenNote, Modifier.weight(1f))
+            BrainTab.GRAPH -> BrainGraph(
+                notes = brain.notes,
+                links = brain.links,
+                dormant = dormant,
+                view = view,
+                live = live,
+                follow = state.settings.followAxo,
+                onFollowChange = onFollowChange,
+                onOpenNote = onOpenNote,
+                modifier = Modifier.weight(1f),
+            )
             BrainTab.ASLEEP -> AsleepTab(brain, dormant, days, onOpenNote)
         }
     }

@@ -44,6 +44,46 @@ object Recall {
             .toList()
     }
 
+    /** Un lien suivi : le fait trouvé [from] nomme la note [note], où Axo lit [fact]. */
+    data class Hop(val from: Hit, val note: Note, val fact: Fact)
+
+    /** Liens suivis au plus pour un message : chaque fait lu retarde le premier mot de la réponse. */
+    const val MAX_HOPS = 2
+
+    /**
+     * Les liens qu'Axo suit depuis les faits trouvés : un fait qui nomme une autre note (« Le frère de
+     * Matteo s'appelle Hugo ») mène à cette note, où il lit le fait le plus proche du message, sinon le
+     * dernier noté. « Mon frère » retrouve ainsi ce qu'il sait de Hugo. Pas vers « Moi », nommée
+     * partout, ni vers une note déjà trouvée.
+     */
+    fun follow(
+        notes: List<Note>,
+        hits: List<Hit>,
+        query: String,
+        index: NoteLinks.Index = NoteLinks.Index(notes),
+        limit: Int = MAX_HOPS,
+        exclude: Set<String> = emptySet(),
+    ): List<Hop> {
+        if (hits.isEmpty() || limit <= 0) return emptyList()
+        val byId = notes.associateBy { it.id }
+        val q = TextMatch.words(query)
+        val taken = hits.mapTo(HashSet()) { it.note.id }
+        val out = ArrayList<Hop>()
+        for (hit in hits) {
+            for (span in NoteLinks.linked(hit.fact.text, index, hit.note.id).spans) {
+                val note = byId[span.noteId] ?: continue
+                if (note.isMe || !taken.add(note.id)) continue
+                val facts = note.facts.withIndex().filter { NoteLinks.plain(it.value.text) !in exclude }
+                if (facts.isEmpty()) continue
+                // Le plus proche du message ; à égalité, le plus récent (les derniers faits sont en bas).
+                val best = facts.maxWith(compareBy<IndexedValue<Fact>> { f -> TextMatch.words(f.value.text).count { it in q } }.thenBy { it.index })
+                out += Hop(hit, note, best.value)
+                if (out.size >= limit) return out
+            }
+        }
+        return out
+    }
+
     /** Les derniers faits de la note « Moi » (début de conversation, « qu'est-ce que tu sais de moi ? »). */
     fun aboutMe(notes: List<Note>, limit: Int, exclude: Set<String> = emptySet()): List<Fact> =
         notes.firstOrNull { it.isMe }?.facts.orEmpty().filter { NoteLinks.plain(it.text) !in exclude }.takeLast(limit).reversed()

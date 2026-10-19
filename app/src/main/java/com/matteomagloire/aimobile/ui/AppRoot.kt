@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.matteomagloire.aimobile.brain.LiveBrain
 import com.matteomagloire.aimobile.model.ModelCatalog
 import java.time.LocalDate
 
@@ -61,12 +62,23 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
         push(Dest(Screen.BRAIN))
     }
 
-    // « Voir dans le graphe » : le Cerveau déjà ouvert plus bas, ou un nouveau.
-    fun showInGraph(id: String) {
-        brainView.showInGraph(id)
+    // Le Cerveau déjà ouvert plus bas, ou un nouveau.
+    fun toBrain() {
         val now = Dest.decode(saved)
         val at = now.indexOfLast { it.screen == Screen.BRAIN }
         if (at >= 0) go(now.take(at + 1)) else push(Dest(Screen.BRAIN))
+    }
+
+    // « Voir dans le graphe » depuis une note.
+    fun showInGraph(id: String) {
+        brainView.showInGraph(id)
+        toBrain()
+    }
+
+    // Le mini-graphe touché dans la conversation : le graphe entier, pour regarder Axo travailler.
+    fun openLive() {
+        brainView.showLive(vm.live.focus(LiveBrain.now()))
+        toBrain()
     }
 
     // Quitter un écran de mesure arrête la mesure en cours : la conversation reprend.
@@ -119,8 +131,10 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
         Screen.BRAIN -> BrainScreen(
             state = state,
             view = brainView,
+            live = vm.live,
             onOpenNote = { openNote(it) },
             onUndo = vm::undoNotes,
+            onFollowChange = { follow -> vm.updateSettings { it.copy(followAxo = follow) } },
             onBack = { back() },
         )
         Screen.NOTE -> NoteScreen(
@@ -156,11 +170,13 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
         } else {
             ChatScreen(
                 state = state,
+                live = vm.live,
                 onSend = vm::send,
                 onStop = vm::stop,
                 onReasoningChange = vm::setReasoningMode,
                 onOpenSettings = { push(Dest(Screen.SETTINGS)) },
                 onOpenBrain = { openBrain() },
+                onOpenLive = { openLive() },
                 onOpenNote = { openNote(it) },
                 onUndoBrain = vm::undoBrainChip,
                 onDismissBrain = vm::dismissBrainChip,

@@ -31,6 +31,10 @@ data class Settings(
     val threads: Int = LlamaEngine.DEFAULT_THREADS,
     /** Une note ni ouverte ni utilisée depuis ce nombre de jours passe en veille. */
     val dormantDays: Int = Brain.DEFAULT_DORMANT_DAYS,
+    /** Le graphe du Cerveau se recentre sur la note où Axo travaille. */
+    val followAxo: Boolean = true,
+    /** Pendant qu'Axo réfléchit, un petit graphe de ce qu'il relit s'affiche au-dessus de sa réponse. */
+    val liveInChat: Boolean = true,
 )
 
 /** Personnalité d'Axo (cahier des charges, « Base de ses instructions »). */
@@ -67,6 +71,8 @@ class SettingsRepository(private val context: Context) {
         val showSpeed = booleanPreferencesKey("show_speed")
         val threads = intPreferencesKey("threads")
         val dormantDays = intPreferencesKey("dormant_days")
+        val followAxo = booleanPreferencesKey("follow_axo")
+        val liveInChat = booleanPreferencesKey("live_in_chat")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -84,6 +90,8 @@ class SettingsRepository(private val context: Context) {
             p[Keys.showSpeed] = next.showSpeed
             p[Keys.threads] = next.threads
             p[Keys.dormantDays] = next.dormantDays
+            p[Keys.followAxo] = next.followAxo
+            p[Keys.liveInChat] = next.liveInChat
             p.storeSystemPrompt(next.systemPrompt)
         }
     }
@@ -109,6 +117,8 @@ class SettingsRepository(private val context: Context) {
             showSpeed = this[Keys.showSpeed] ?: d.showSpeed,
             threads = (this[Keys.threads] ?: d.threads).coerceIn(LlamaEngine.MIN_THREADS, LlamaEngine.MAX_THREADS),
             dormantDays = this[Keys.dormantDays]?.takeIf { it in Brain.DORMANT_CHOICES } ?: d.dormantDays,
+            followAxo = this[Keys.followAxo] ?: d.followAxo,
+            liveInChat = this[Keys.liveInChat] ?: d.liveInChat,
         )
     }
 }

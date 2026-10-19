@@ -28,6 +28,9 @@ class GraphCamera {
     /** Le doigt a déplacé le graphe : il n'est plus recadré tout seul. */
     var moved = false
 
+    /** Le dernier geste du doigt ([com.matteomagloire.aimobile.brain.LiveBrain.now]) : la caméra ne suit pas Axo juste après. */
+    var touched: Long? = null
+
     /** Une note à mettre au milieu de l'écran dès que le graphe est prêt (« Voir dans le graphe »). */
     var focus by mutableStateOf<String?>(null)
 
@@ -61,6 +64,19 @@ class BrainView {
         filter = GraphFilter.All
         selected = noteId
         camera.focus = noteId
+    }
+
+    /**
+     * Le graphe entier, pour regarder Axo travailler (le mini-graphe touché dans la conversation) :
+     * centré sur [focus], la note où il en est, sinon cadré en entier.
+     */
+    fun showLive(focus: String?) {
+        tab = BrainTab.GRAPH
+        filter = GraphFilter.All
+        selected = null
+        if (focus == null) camera.refit()
+        camera.focus = focus
+        camera.touched = null
     }
 
     /** Retour à l'état de départ (le Cerveau ouvert depuis la conversation). */

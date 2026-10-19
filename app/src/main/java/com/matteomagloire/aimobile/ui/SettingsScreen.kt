@@ -159,6 +159,18 @@ fun SettingsScreen(
 
             SectionTitle("Cerveau")
             AxoCard {
+                ToggleRow(
+                    "Voir Axo penser dans la conversation",
+                    settings.liveInChat,
+                    { v -> onChange { it.copy(liveInChat = v) } },
+                    detail = "Au-dessus de sa réponse, les notes qu'il lit et les liens qu'il suit",
+                )
+                ToggleRow(
+                    "Le graphe suit Axo",
+                    settings.followAxo,
+                    { v -> onChange { it.copy(followAxo = v) } },
+                    detail = "Pendant qu'il travaille, le graphe glisse vers la note où il est",
+                )
                 Text("Mise en veille des notes", style = MaterialTheme.typography.bodyLarge)
                 Text(
                     "Une note que ni toi ni Axo n'avez ouverte ou utilisée depuis ce délai passe en veille. " +
