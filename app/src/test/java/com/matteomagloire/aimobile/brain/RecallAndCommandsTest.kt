@@ -109,6 +109,25 @@ class RecallAndCommandsTest {
     }
 
     @Test
+    fun recollectGathersWhatAxoRereads() {
+        // Son prénom d'abord, puis « Moi », puis ce que « s'appelle » trouve (le chat).
+        val name = Recall.recollect(notes, "tu c'est comment je m'appelle", emptySet(), startOfSession = false, dormant = emptySet())
+        assertEquals(
+            listOf("Il s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans.", "Matteo a un chat qui s'appelle Pixel."),
+            name.facts,
+        )
+        assertTrue(name.readsMe)
+        assertEquals(listOf("pixel"), name.kept)
+        // Un message ordinaire : seulement ce qui s'en rapproche, sans « Moi ».
+        val pixel = Recall.recollect(notes, "Comment va Pixel ?", emptySet(), startOfSession = false, dormant = emptySet())
+        assertEquals(setOf("Matteo a un chat qui s'appelle Pixel.", "Il adore dormir sur le clavier."), pixel.facts.toSet())
+        assertFalse(pixel.readsMe)
+        // Début de séance : « Moi » est relu, et ce qui vient d'être donné ne l'est pas deux fois.
+        val start = Recall.recollect(notes, "Il fait beau", setOf("Matteo aime le jazz."), startOfSession = true, dormant = emptySet())
+        assertEquals(listOf("Matteo habite à Paris.", "Matteo a 23 ans."), start.facts)
+    }
+
+    @Test
     fun memoryBlock() {
         assertEquals("", Recall.block(emptyList()))
         val block = Recall.block(listOf("Matteo a 23 ans."))

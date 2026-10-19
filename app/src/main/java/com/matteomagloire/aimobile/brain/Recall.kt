@@ -15,6 +15,50 @@ object Recall {
     /** Poids d'une note en veille : Axo puise d'abord dans les notes actives, sans oublier les autres. */
     const val DORMANT_WEIGHT = 0.75
 
+    /** Faits glissés devant un message, au plus (sans les liens suivis ni « Moi »). */
+    const val MAX_HITS = 3
+
+    /** Faits trouvés montrés à l'écran, parmi lesquels Axo garde les meilleurs. */
+    const val CANDIDATES = 8
+
+    /** Longueur des faits glissés devant un message, au plus. */
+    const val MAX_MEMORY_CHARS = 420
+
+    /** Ce qu'Axo relit avant un message ([facts], dans l'ordre), et ce qu'il a touché pour le trouver. */
+    data class Recollection(
+        val facts: List<String>,
+        val found: List<Hit>,
+        val kept: List<String>,
+        val followed: List<Hop>,
+        val readsMe: Boolean,
+    )
+
+    /**
+     * Les souvenirs à glisser devant [message] (rapide, sans le modèle) : son prénom et « Moi » s'il
+     * parle de lui ou si [startOfSession], les faits proches, puis ceux des notes qu'ils nomment.
+     * [given] : faits déjà glissés dans les derniers messages ; [dormant] : notes en veille.
+     */
+    fun recollect(notes: List<Note>, message: String, given: Set<String>, startOfSession: Boolean, dormant: Set<String>): Recollection {
+        // Les faits proches du message, puis ceux des notes qu'ils nomment : « mon frère » mène à Hugo.
+        val found = search(notes, message, limit = CANDIDATES, exclude = given, dormant = dormant)
+        val top = found.take(MAX_HITS)
+        // Axo lit les faits sans les crochets des liens écrits à la main.
+        val hits = top.map { NoteLinks.plain(it.fact.text) }
+        val hops = follow(notes, top, message, exclude = given + hits)
+        val me = aboutMe(message, notes, always = startOfSession, limit = 4, exclude = given + hits)
+        // Peu de lignes : chaque mot lu retarde le premier mot de la réponse. Les liens suivis passent en dernier.
+        var chars = 0
+        val facts = (me + hits + hops.map { NoteLinks.plain(it.fact.text) }).distinct()
+            .takeWhile { chars += it.length; chars <= MAX_MEMORY_CHARS }
+        return Recollection(
+            facts = facts,
+            found = found,
+            kept = top.filter { NoteLinks.plain(it.fact.text) in facts }.map { it.note.id }.distinct(),
+            followed = hops.filter { NoteLinks.plain(it.fact.text) in facts },
+            readsMe = me.any { it in facts },
+        )
+    }
+
     /**
      * Les faits actuels les plus proches de [query], du plus pertinent au moins pertinent. Ceux des
      * notes en veille ([dormant]) passent après les faits aussi pertinents des notes actives.

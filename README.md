@@ -35,6 +35,7 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
 | `.../update/` | Vérification, téléchargement, vérification SHA-256 et installation des mises à jour |
 | `.../settings/` | Réglages (DataStore) et personnalité par défaut d'Axo |
 | `.../ui/` | Écrans Compose, thème « Une lueur dans la poche », icônes |
+| `app/src/test/.../bench/` | Banc d'Axo : conversations de test et leurs vérifications, sur le vrai modèle |
 
 ## Compiler
 Il faut Android Studio (ou le SDK Android + NDK) et une connexion internet au premier build (llama.cpp est téléchargé par CMake).
@@ -45,6 +46,9 @@ Il faut Android Studio (ou le SDK Android + NDK) et une connexion internet au pr
 ```
 
 La CI (`.github/workflows/build.yml`) lance les tests et compile l'APK debug à chaque PR ; il est téléchargeable dans l'onglet Actions.
+
+## Banc d'Axo
+Le workflow **Banc d'Axo** (`.github/workflows/bench.yml`, lancé à la main dans l'onglet Actions) fait tourner de vraies conversations avec le vrai modèle, par le code de l'appli : le pont JNI est compilé pour l'ordinateur de GitHub, et `AxoBenchTest` charge le fichier choisi (Q4_0 par défaut, gardé en cache) avec la personnalité, les souvenirs du Cerveau (`Recall.recollect`, sur un Cerveau inventé) et les réglages par défaut. Chaque conversation de `bench/BenchCases.kt` (son prénom écrit vite, rester sur le sujet, la météo, les emojis, les astérisques…) est vérifiée automatiquement ; le rapport (`report.md`, avec chaque réponse) s'affiche dans le résumé du workflow et se télécharge avec ses fichiers. Hors de ce workflow, le banc est ignoré.
 
 ## Publier une mise à jour
 1. **Une seule fois : créer la clé de signature.** Toutes les versions doivent être signées avec la même clé, sinon Android refuse la mise à jour. Garde ce fichier et ses mots de passe en lieu sûr.

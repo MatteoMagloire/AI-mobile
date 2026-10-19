@@ -1,0 +1,85 @@
+name: Banc d'Axo
+
+# De vraies conversations avec le vrai modèle, par le code de l'appli compilé pour l'ordinateur
+# (AxoBenchTest) : personnalité, souvenirs du Cerveau et réglages par défaut. Lancé à la main, le
+# modèle pèse environ 2 Go ; il est gardé en cache d'un lancement à l'autre.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Fichier du modèle Instruct
+        type: choice
+        default: Q4_0
+        options: [Q4_0, Q4_K_M, UD-Q4_K_XL]
+      seeds:
+        description: Graines (une réponse par graine et par conversation)
+        default: "1,2"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Les mêmes fichiers que ModelCatalog.
+      - name: Fichier du modèle
+        id: model
+        run: |
+          base=Ministral-3-3B-Instruct-2512
+          case "${{ inputs.model }}" in
+            Q4_K_M) repo=mistralai; id=ministral-3-3b-instruct-q4km ;;
+            UD-Q4_K_XL) repo=unsloth; id=ministral-3-3b-instruct-ud-q4kxl ;;
+            *) repo=unsloth; id=ministral-3-3b-instruct-q40 ;;
+          esac
+          file="$base-${{ inputs.model }}.gguf"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "path=$HOME/axo-models/$file" >> "$GITHUB_OUTPUT"
+          echo "url=https://huggingface.co/$repo/$base-GGUF/resolve/main/$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/axo-models
+          key: model-${{ steps.model.outputs.file }}
+
+      - name: Téléchargement du modèle
+        run: |
+          mkdir -p ~/axo-models
+          f="${{ steps.model.outputs.path }}"
+          [ -s "$f" ] || curl -L --fail --retry 3 -o "$f" "${{ steps.model.outputs.url }}"
+          ls -l "$f"
+
+      - name: Pont JNI pour l'ordinateur
+        run: |
+          cmake -S app/src/main/cpp -B build-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-host --target aimobile -j "$(nproc)"
+
+      - name: Conversations
+        env:
+          AXO_BENCH_MODEL: ${{ steps.model.outputs.path }}
+          AXO_BENCH_MODEL_ID: ${{ steps.model.outputs.id }}
+          AXO_BENCH_SEEDS: ${{ inputs.seeds }}
+          # La JVM des tests y cherche libaimobile.so.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/build-host
+        run: ./gradlew --no-daemon testDebugUnitTest --tests 'com.matteomagloire.aimobile.bench.AxoBenchTest'
+
+      - name: Rapport
+        if: always()
+        run: |
+          r=app/build/axo-bench/report.md
+          if [ -f "$r" ]; then cat "$r" >> "$GITHUB_STEP_SUMMARY"; cat "$r"; else echo "Pas de rapport"; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: axo-bench
+          path: app/build/axo-bench/
+          if-no-files-found: ignore

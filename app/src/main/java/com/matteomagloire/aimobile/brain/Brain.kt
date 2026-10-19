@@ -172,28 +172,15 @@ class Brain(
             val forgetting = store.forget(command.what, time, NoteTaker.excerpt(message))
             return Prepared(Recall.block(emptyList(), forgotten = forgetting.texts, nothingToForget = forgetting.isEmpty), forgetting)
         }
-        val given = Recall.alreadyGiven(recentMemories)
         val notes = store.notes.value
         val today = LocalDate.now()
         val dormant = notes.filter { it.isDormant(today, dormantDays) }.map { it.id }.toSet()
-        // Les faits proches du message, puis ceux des notes qu'ils nomment : « mon frère » mène à Hugo.
-        val found = Recall.search(notes, message, limit = CANDIDATES, exclude = given, dormant = dormant)
-        val top = found.take(MAX_HITS)
-        // Axo lit les faits sans les crochets des liens écrits à la main.
-        val hits = top.map { NoteLinks.plain(it.fact.text) }
-        val hops = Recall.follow(notes, top, message, exclude = given + hits)
-        val aboutMe = Recall.aboutMe(message, notes, always = startOfSession, limit = 4, exclude = given + hits)
-        // Peu de lignes : chaque mot lu retarde le premier mot de la réponse. Les liens suivis passent en dernier.
-        var chars = 0
-        val facts = (aboutMe + hits + hops.map { NoteLinks.plain(it.fact.text) }).distinct()
-            .takeWhile { chars += it.length; chars <= MAX_MEMORY_CHARS }
-        val kept = top.filter { NoteLinks.plain(it.fact.text) in facts }.map { it.note.id }.distinct()
-        val followed = hops.filter { NoteLinks.plain(it.fact.text) in facts }
-        show(notes, found, kept, followed, readsMe = aboutMe.any { it in facts }, dormant)
+        val r = Recall.recollect(notes, message, Recall.alreadyGiven(recentMemories), startOfSession, dormant)
+        show(notes, r.found, r.kept, r.followed, r.readsMe, dormant)
         // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
-        val used = (kept + followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
+        val used = (r.kept + r.followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
         if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
-        return Prepared(Recall.block(facts, remember = command is BrainCommand.Remember))
+        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember))
     }
 
     /** Montre à l'écran ce qu'Axo vient de faire avant de répondre : chercher, lire, suivre un lien, réveiller. */
@@ -221,13 +208,6 @@ class Brain(
 
     companion object {
         private const val TAG = "Brain"
-        const val MAX_MEMORY_CHARS = 420
-
-        /** Faits glissés devant un message, au plus (sans les liens suivis ni « Moi »). */
-        const val MAX_HITS = 3
-
-        /** Faits trouvés montrés à l'écran, parmi lesquels Axo garde les meilleurs. */
-        const val CANDIDATES = 8
 
         /** Au-delà de ce silence, le prochain message commence une nouvelle séance. */
         const val SESSION_GAP_MS = 3 * 60 * 60 * 1000L
