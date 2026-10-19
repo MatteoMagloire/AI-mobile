@@ -15,7 +15,8 @@ enum class Cue(val text: String) {
 
     /**
      * La météo ou les infos : « pas de soleil, un peu de pluie », « le vent va être fort ». Sans « tu ne
-     * vois pas dehors », il restait « juste le vent qui grésille dans la rue ».
+     * vois pas dehors », il restait « juste le vent qui grésille dans la rue » ; avec « dis-lui que tu
+     * ne sais pas », « Non je ne sais pas, mais ça peut être nuageux ».
      */
     OFFLINE("tu n'as pas internet et tu ne vois pas dehors : tu ne connais ni la météo ni les infos, n'en invente rien"),
 
