@@ -9,6 +9,7 @@ import com.matteomagloire.aimobile.model.ModelCatalog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -45,6 +46,16 @@ class Brain(
 
     /** Chaque prise de notes qui a ajouté quelque chose (« Noté dans le Cerveau »). */
     val noted: SharedFlow<JournalEntry> = _noted.asSharedFlow()
+
+    private val _events = MutableSharedFlow<BrainEvent>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Ce qu'Axo fait dans sa mémoire, geste par geste, pour le montrer en direct. */
+    val events: SharedFlow<BrainEvent> = _events.asSharedFlow()
+
+    /** La conversation signale où en est la réponse ([BrainEvent.Answering], [BrainEvent.End] de la réponse). */
+    fun signal(event: BrainEvent) {
+        _events.tryEmit(event)
+    }
 
     // La conversation la plus récente, et un numéro qui change à chaque interruption : une lecture
     // demandée avant une interruption ne démarre pas après elle.
@@ -132,7 +143,7 @@ class Brain(
     private suspend fun readPending(ticket: Int) {
         while (ticket == interruptions) {
             val next = NoteTaker.pending(latest, store.processedUntil).firstOrNull() ?: return
-            when (val reading = taker.read(next, store, model)) {
+            when (val reading = taker.read(next, store, model) { _events.tryEmit(it) }) {
                 Reading.Later -> return
                 is Reading.Done -> reading.entry?.takeIf { it.outcome == NoteOutcome.NOTED }?.let { _noted.tryEmit(it) }
             }
@@ -165,26 +176,62 @@ class Brain(
         val notes = store.notes.value
         val today = LocalDate.now()
         val dormant = notes.filter { it.isDormant(today, dormantDays) }.map { it.id }.toSet()
-        val found = Recall.search(notes, message, limit = 3, exclude = given, dormant = dormant)
+        // Les faits proches du message, puis ceux des notes qu'ils nomment : « mon frère » mène à Hugo.
+        val found = Recall.search(notes, message, limit = CANDIDATES, exclude = given, dormant = dormant)
+        val top = found.take(MAX_HITS)
         // Axo lit les faits sans les crochets des liens écrits à la main.
-        val hits = found.map { NoteLinks.plain(it.fact.text) }
+        val hits = top.map { NoteLinks.plain(it.fact.text) }
+        val hops = Recall.follow(notes, top, message, exclude = given + hits)
         val aboutMe = if (startOfSession || Recall.asksAboutMe(message)) {
             Recall.aboutMe(notes, 4, given + hits).map { NoteLinks.plain(it.text) }
         } else {
             emptyList()
         }
-        // Peu de lignes : chaque mot lu retarde le premier mot de la réponse.
+        // Peu de lignes : chaque mot lu retarde le premier mot de la réponse. Les liens suivis passent en dernier.
         var chars = 0
-        val facts = (aboutMe + hits).distinct().takeWhile { chars += it.length; chars <= MAX_MEMORY_CHARS }
+        val facts = (aboutMe + hits + hops.map { NoteLinks.plain(it.fact.text) }).distinct()
+            .takeWhile { chars += it.length; chars <= MAX_MEMORY_CHARS }
+        val kept = top.filter { NoteLinks.plain(it.fact.text) in facts }.map { it.note.id }.distinct()
+        val followed = hops.filter { NoteLinks.plain(it.fact.text) in facts }
+        show(notes, found, kept, followed, readsMe = aboutMe.any { it in facts }, dormant)
         // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
-        val used = found.filter { !it.note.isMe && NoteLinks.plain(it.fact.text) in facts }.map { it.note.id }.distinct()
+        val used = (kept + followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
         if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
         return Prepared(Recall.block(facts, remember = command is BrainCommand.Remember))
+    }
+
+    /** Montre à l'écran ce qu'Axo vient de faire avant de répondre : chercher, lire, suivre un lien, réveiller. */
+    private fun show(
+        notes: List<Note>,
+        found: List<Recall.Hit>,
+        kept: List<String>,
+        followed: List<Recall.Hop>,
+        readsMe: Boolean,
+        dormant: Set<String>,
+    ) {
+        _events.tryEmit(BrainEvent.Begin(BrainEvent.Work.ANSWER))
+        if (found.isNotEmpty()) _events.tryEmit(BrainEvent.Searched(found.map { it.note.id }.distinct(), kept))
+        fun read(id: String) {
+            _events.tryEmit(BrainEvent.Read(id))
+            if (id in dormant) _events.tryEmit(BrainEvent.Woke(id))
+        }
+        notes.firstOrNull { it.isMe }?.takeIf { readsMe && it.id !in kept }?.let { read(it.id) }
+        kept.forEach(::read)
+        for (hop in followed) {
+            _events.tryEmit(BrainEvent.Followed(hop.from.note.id, hop.note.id))
+            read(hop.note.id)
+        }
     }
 
     companion object {
         private const val TAG = "Brain"
         const val MAX_MEMORY_CHARS = 420
+
+        /** Faits glissés devant un message, au plus (sans les liens suivis ni « Moi »). */
+        const val MAX_HITS = 3
+
+        /** Faits trouvés montrés à l'écran, parmi lesquels Axo garde les meilleurs. */
+        const val CANDIDATES = 8
 
         /** Au-delà de ce silence, le prochain message commence une nouvelle séance. */
         const val SESSION_GAP_MS = 3 * 60 * 60 * 1000L

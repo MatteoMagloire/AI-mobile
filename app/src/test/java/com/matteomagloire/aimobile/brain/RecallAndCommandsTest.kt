@@ -41,6 +41,36 @@ class RecallAndCommandsTest {
     }
 
     @Test
+    fun recallFollowsLinksFromWhatItFound() {
+        val family = listOf(
+            Note(
+                Note.ME_ID, Note.ME_TITLE, listOf(Note.ME_TAG), day, day,
+                facts = listOf(Fact("Le frère de Matteo s'appelle Hugo.", day), Fact("Matteo aime le jazz.", day)),
+            ),
+            Note("hugo", "Hugo", listOf("personne"), day, day, facts = listOf(Fact("Hugo est végétarien.", day), Fact("Hugo travaille chez Airbus.", day))),
+            Note("pixel", "Pixel", listOf("animal"), day, day, facts = listOf(Fact("Pixel est le chat de Matteo.", day))),
+        )
+        val message = "Mon frère vient manger ce soir"
+        val hits = Recall.search(family, message)
+        assertEquals(listOf("Le frère de Matteo s'appelle Hugo."), hits.map { it.fact.text })
+        // « Mon frère » ne nomme pas Hugo : le fait trouvé y mène. Rien en commun : le dernier noté.
+        val hop = Recall.follow(family, hits, message).single()
+        assertEquals(Note.ME_ID to "hugo", hop.from.note.id to hop.note.id)
+        assertEquals("Hugo travaille chez Airbus.", hop.fact.text)
+        // Un mot du message : ce fait-là.
+        assertEquals("Hugo est végétarien.", Recall.follow(family, hits, "Mon frère mange végétarien").single().fact.text)
+        // Déjà donné : rien de neuf à lire là-bas.
+        val given = setOf("Hugo est végétarien.", "Hugo travaille chez Airbus.")
+        assertEquals(emptyList<Recall.Hop>(), Recall.follow(family, hits, message, exclude = given))
+        // Jamais vers « Moi », nommée partout, ni vers une note déjà trouvée.
+        assertEquals(emptyList<Recall.Hop>(), Recall.follow(family, Recall.search(family, "Et Pixel ?"), "Et Pixel ?"))
+        val both = Recall.search(family, "Mon frère est-il végétarien ?")
+        assertEquals(setOf(Note.ME_ID, "hugo"), both.map { it.note.id }.toSet())
+        assertEquals(emptyList<Recall.Hop>(), Recall.follow(family, both, "Mon frère est-il végétarien ?"))
+        assertEquals(emptyList<Recall.Hop>(), Recall.follow(family, hits, message, limit = 0))
+    }
+
+    @Test
     fun questionsAboutMe() {
         assertTrue(Recall.asksAboutMe("Tu te souviens de mon âge ?"))
         assertTrue(Recall.asksAboutMe("Qu'est-ce que tu sais sur moi ?"))

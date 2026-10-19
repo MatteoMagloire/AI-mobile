@@ -7,6 +7,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.matteomagloire.aimobile.AiMobileApp
 import com.matteomagloire.aimobile.brain.Brain
+import com.matteomagloire.aimobile.brain.BrainEvent
 import com.matteomagloire.aimobile.brain.BrainScenario
 import com.matteomagloire.aimobile.brain.BrainTestResult
 import com.matteomagloire.aimobile.brain.BrainTestRow
@@ -14,6 +15,7 @@ import com.matteomagloire.aimobile.brain.Exchange
 import com.matteomagloire.aimobile.brain.Fact
 import com.matteomagloire.aimobile.brain.Forgetting
 import com.matteomagloire.aimobile.brain.JournalEntry
+import com.matteomagloire.aimobile.brain.LiveBrain
 import com.matteomagloire.aimobile.brain.ModelAccess
 import com.matteomagloire.aimobile.brain.Note
 import com.matteomagloire.aimobile.brain.NoteLinks
@@ -162,6 +164,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(ChatUiState(downloaded = downloadedIds()))
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
+    /** Ce qu'Axo fait dans sa mémoire, déroulé à l'écran (graphe du Cerveau, conversation). */
+    val live = LiveBrain()
+
     private val conversationLoaded: Job
     private var opening: Job? = null
     private var generation: Job? = null
@@ -205,6 +210,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         viewModelScope.launch { brain.store.journal.collect { j -> updateBrain { it.copy(journal = j) } } }
+        // Sur le fil de l'écran, comme le dessin.
+        viewModelScope.launch { brain.events.collect { live.push(it, LiveBrain.now()) } }
         viewModelScope.launch { brain.noting.collect { v -> updateBrain { it.copy(noting = v) } } }
         viewModelScope.launch { brain.noted.collect { e -> updateBrain { it.copy(chip = BrainChip.Noted(e)) } } }
         viewModelScope.launch(Dispatchers.IO) {
@@ -359,7 +366,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         engine.configureSampler(settings.temperature, settings.topP)
                         engine.generate(prepared.memory + message, settings.maxTokens).collect { piece ->
                             val t = System.nanoTime()
-                            if (firstWordMs == 0L) firstWordMs = ((t - start) / 1_000_000).coerceAtLeast(1)
+                            if (firstWordMs == 0L) {
+                                firstWordMs = ((t - start) / 1_000_000).coerceAtLeast(1)
+                                brain.signal(BrainEvent.Answering)
+                            }
                             raw.append(piece)
                             val parsed = ThinkParser.parse(raw.toString())
                             if (parsed.isThinking && thinkingStart == 0L) thinkingStart = t
@@ -397,6 +407,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 if (thinkingStart != 0L && thinkingMs == 0L) thinkingMs = (System.nanoTime() - thinkingStart) / 1_000_000
                 replaceLast { if (it.fromUser) it else it.copy(isThinking = false, thinkingMs = thinkingMs) }
                 _state.update { it.copy(generating = false) }
+                brain.signal(BrainEvent.End(BrainEvent.Work.ANSWER))
                 saveConversation()
                 // Même arrêtée, la réponse laisse un échange à lire pour le Cerveau.
                 if (failed) openChat() else brain.takeNotes(_state.value.messages)

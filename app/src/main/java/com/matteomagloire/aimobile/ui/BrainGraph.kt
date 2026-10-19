@@ -24,13 +24,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.matteomagloire.aimobile.brain.GraphLayout
+import com.matteomagloire.aimobile.brain.LiveBrain
 import com.matteomagloire.aimobile.brain.Note
 import com.matteomagloire.aimobile.brain.NoteFilter
 import com.matteomagloire.aimobile.brain.NoteLinks
@@ -65,13 +69,13 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-private val EdgeColor = Color(0xFF3A3F4B)
-private val NodeLight = Color(0xFFE3B488)
-private val Sleeping = Axo.Frost.copy(alpha = 0.55f)
 private val LitEdge = Axo.Amber.copy(alpha = 0.55f)
 private val Halo = Axo.Amber.copy(alpha = 0.12f)
 private const val MIN_SCALE = 0.15f
 private const val MAX_SCALE = 4f
+
+/** Après un geste du doigt, la caméra laisse le graphe où il est le temps de ce délai (ms). */
+private const val FOLLOW_PAUSE = 3_000L
 
 /** Une note dessinée : sa place dans la disposition, sa taille (en dp à l'échelle 1) et son état. */
 private class GraphNode(val note: Note, val index: Int, val radius: Float, val degree: Int, val dormant: Boolean)
@@ -79,7 +83,8 @@ private class GraphNode(val note: Note, val index: Int, val radius: Float, val d
 /**
  * L'onglet Graphe : chaque note est un point, chaque lien un trait. On zoome et on se déplace avec
  * les doigts ; toucher un point l'éclaire avec ses voisines et montre sa fiche, toucher la fiche (ou
- * le point à nouveau) ouvre la note. Les notes en veille sont pâles.
+ * le point à nouveau) ouvre la note. Les notes en veille sont pâles. En direct, [live] montre ce
+ * qu'Axo fait dans sa mémoire ; avec [follow], la caméra le suit.
  */
 @Composable
 fun BrainGraph(
@@ -87,6 +92,9 @@ fun BrainGraph(
     links: NoteLinks.Links,
     dormant: Set<String>,
     view: BrainView,
+    live: LiveBrain,
+    follow: Boolean,
+    onFollowChange: (Boolean) -> Unit,
     onOpenNote: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -150,19 +158,22 @@ fun BrainGraph(
             GraphNode(note, index, radius, degree, asleep)
         }
     }
-    // Les traits, par paires d'indices dans la disposition : rien à chercher pendant le dessin.
-    val edges: IntArray = remember(drawing, visible) {
-        val d = drawing ?: return@remember IntArray(0)
+    // Les traits, par paires d'indices dans la disposition (et leurs notes, pour le direct) : rien à
+    // chercher pendant le dessin.
+    val edges: Pair<IntArray, List<Pair<String, String>>> = remember(drawing, visible) {
+        val d = drawing ?: return@remember IntArray(0) to emptyList()
         val out = ArrayList<Int>()
+        val keys = ArrayList<Pair<String, String>>()
         for ((a, b) in d.edges) {
             val i = d.positions.indexOf(a)
             val j = d.positions.indexOf(b)
             if (a in visible && b in visible && i >= 0 && j >= 0) {
                 out += i
                 out += j
+                keys += LiveBrain.edge(a, b)
             }
         }
-        out.toIntArray()
+        out.toIntArray() to keys
     }
     val selected = view.selected?.takeIf { it in visible }
     val selectedIndex = selected?.let { drawing?.positions?.indexOf(it) } ?: -1
@@ -189,19 +200,34 @@ fun BrainGraph(
         }
     }
 
+    // Le direct : l'horloge avance image par image tant que quelque chose bouge, et la caméra suit
+    // doucement la note où Axo travaille.
+    val revision by live.revision.collectAsState()
+    var clock by remember { mutableLongStateOf(LiveBrain.now()) }
+    val latestDrawing by rememberUpdatedState(drawing)
+    val latestVisible by rememberUpdatedState(visible)
+    val latestSize by rememberUpdatedState(size)
+    val latestFollow by rememberUpdatedState(follow)
+    LaunchedEffect(live, revision) {
+        clock = LiveBrain.now()
+        while (live.busy(clock)) {
+            withFrameMillis { clock = it }
+            if (latestFollow) followAxo(camera, live.focus(clock), latestDrawing, latestVisible, latestSize, density, clock)
+        }
+    }
+
     val measurer = rememberTextMeasurer()
     val labels = remember { HashMap<String, TextLayoutResult>() }
     val labelStyle = MaterialTheme.typography.bodySmall
     val meStyle = MaterialTheme.typography.labelLarge
     val latestNodes by rememberUpdatedState(nodes)
-    val latestDrawing by rememberUpdatedState(drawing)
     val latestOpen by rememberUpdatedState(onOpenNote)
 
     Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
         Canvas(
             Modifier
                 .fillMaxSize()
-                .semantics { contentDescription = "Graphe des notes : ${nodes.size} notes, ${edges.size / 2} liens" }
+                .semantics { contentDescription = "Graphe des notes : ${nodes.size} notes, ${edges.second.size} liens" }
                 .pointerInput(Unit) {
                     detectTransformGestures { centroid, pan, zoom, _ ->
                         if (camera.offset.isUnspecified) return@detectTransformGestures
@@ -210,6 +236,7 @@ fun BrainGraph(
                         camera.offset = (camera.offset - centroid) * f + centroid + pan
                         camera.scale = scale
                         camera.moved = true
+                        camera.touched = LiveBrain.now()
                     }
                 }
                 .pointerInput(Unit) {
@@ -226,54 +253,95 @@ fun BrainGraph(
         ) {
             val d = drawing ?: return@Canvas
             if (camera.offset.isUnspecified) return@Canvas
+            val now = clock
+            val f = live.frame(now)
             val s = camera.scale * density
             val ox = camera.offset.x
             val oy = camera.offset.y
             val px = d.positions.x
             val py = d.positions.y
+            val ids = d.positions.ids
+            fun at(i: Int) = Offset(ox + px[i] * s, oy + py[i] * s)
+            fun shown(id: String) = f.appear[id] ?: 1f
             // Les points grossissent moins vite que le graphe : lisibles de loin, discrets de près.
             val dot = sqrt(camera.scale).coerceIn(0.55f, 1.6f) * density
             val thin = 1.2.dp.toPx()
             val thick = 1.6.dp.toPx()
+            val (pairs, keys) = edges
+            // Les liens qui se tracent en ce moment : dessinés à part, au fur et à mesure.
+            val tracing = if (f.strokes.isEmpty()) emptySet() else f.strokes.mapTo(HashSet()) { LiveBrain.edge(it.from, it.to) }
 
-            // Les liens de la note touchée passent devant, en ambre.
+            // Les liens de la note touchée, et ceux qu'Axo vient d'emprunter, passent devant, en ambre.
             for (pass in 0..1) {
-                if (pass == 1 && selectedIndex < 0) break
-                for (k in edges.indices step 2) {
-                    val i = edges[k]
-                    val j = edges[k + 1]
-                    val bright = i == selectedIndex || j == selectedIndex
+                if (pass == 1 && selectedIndex < 0 && f.trail.isEmpty()) break
+                for (k in pairs.indices step 2) {
+                    val i = pairs[k]
+                    val j = pairs[k + 1]
+                    val key = keys[k / 2]
+                    if (key in tracing) continue
+                    val trail = f.trail[key] ?: 0f
+                    val bright = i == selectedIndex || j == selectedIndex || trail > 0f
                     if (bright != (pass == 1)) continue
-                    drawLine(
-                        if (bright) LitEdge else EdgeColor,
-                        Offset(ox + px[i] * s, oy + py[i] * s),
-                        Offset(ox + px[j] * s, oy + py[j] * s),
-                        if (bright) thick else thin,
-                    )
+                    val alpha = min(shown(ids[i]), shown(ids[j]))
+                    if (alpha <= 0f) continue
+                    val color = when {
+                        trail > 0f -> Axo.Amber.copy(alpha = (0.3f + 0.6f * trail) * alpha)
+                        bright -> LitEdge
+                        else -> EdgeColor.copy(alpha = alpha)
+                    }
+                    drawLine(color, at(i), at(j), if (bright) thick else thin)
                 }
             }
+            for (m in f.strokes) {
+                if (m.progress <= 0f || m.from !in visible || m.to !in visible) continue
+                val i = d.positions.indexOf(m.from)
+                val j = d.positions.indexOf(m.to)
+                if (i < 0 || j < 0) continue
+                val a = at(i)
+                drawLine(Axo.Amber, a, a + (at(j) - a) * m.progress, thick)
+            }
             for (node in nodes) {
-                val c = Offset(ox + px[node.index] * s, oy + py[node.index] * s)
-                val r = node.radius * dot
-                if (node.note.isMe || node.note.id == selected) drawCircle(Halo, r * 2.1f, c)
-                val color = when {
+                val id = node.note.id
+                val alpha = shown(id)
+                if (alpha <= 0f) continue
+                val c = at(node.index)
+                val grow = f.grow[id] ?: 0f
+                val r = node.radius * dot * (1f + 0.35f * grow)
+                val light = f.light[id] ?: 0f
+                if (light > 0f) drawLight(c, r, light * alpha)
+                f.pulse[id]?.let { drawPulse(c, r, it, density) }
+                if (node.note.isMe || id == selected) drawCircle(Halo, r * 2.1f, c, alpha = alpha)
+                val base = when {
                     node.dormant -> Sleeping
                     node.note.isMe -> Axo.Amber
                     lit.isEmpty() -> if (node.degree >= 3) Axo.Amber else NodeLight
-                    node.note.id in lit -> Axo.Amber
+                    id in lit -> Axo.Amber
                     else -> NodeLight
                 }
-                drawCircle(color, r, c)
-                if (node.note.id == selected) drawCircle(Axo.AmberLight, r + 3.dp.toPx(), c, style = Stroke(1.5.dp.toPx()))
+                drawCircle(liveColor(base, light, f.wake[id]), r, c, alpha = alpha)
+                if (id == selected) drawCircle(Axo.AmberLight, r + 3.dp.toPx(), c, style = Stroke(1.5.dp.toPx()))
+                if (grow > 0f) drawWriting(c, r, now, grow, density)
             }
-            // Les noms : tous si le graphe est assez grand à l'écran, sinon ceux qui comptent.
+            for (b in f.balls) {
+                if (b.from !in visible || b.to !in visible) continue
+                val i = d.positions.indexOf(b.from)
+                val j = d.positions.indexOf(b.to)
+                if (i < 0 || j < 0) continue
+                val a = at(i)
+                drawBall(a + (at(j) - a) * b.progress, density)
+            }
+            // Les noms : tous si le graphe est assez grand à l'écran, sinon ceux qui comptent (et ceux
+            // qu'Axo touche en ce moment).
             val allNames = nodes.size <= 12 || camera.scale >= 0.75f
             val maxWidth = 140.dp.roundToPx()
             for (node in nodes) {
-                val important = node.note.isMe || node.note.id in lit || node.degree >= 6
+                val id = node.note.id
+                val important = node.note.isMe || id in lit || node.degree >= 6 || id in f.light || id in f.pulse || id in f.grow
                 if (!allNames && !important) continue
+                val alpha = shown(id)
+                if (alpha <= 0f) continue
                 val style = if (node.note.isMe) meStyle else labelStyle
-                val text = labels.getOrPut("${node.note.id}\n${node.note.title}\n${node.note.isMe}") {
+                val text = labels.getOrPut("$id\n${node.note.title}\n${node.note.isMe}") {
                     measurer.measure(
                         node.note.title,
                         style = style,
@@ -282,14 +350,16 @@ fun BrainGraph(
                         constraints = Constraints(maxWidth = maxWidth),
                     )
                 }
-                val cx = ox + px[node.index] * s
-                val cy = oy + py[node.index] * s
+                val c = at(node.index)
                 val color = when {
+                    id in f.light || id in f.pulse -> Axo.AmberLight
                     node.dormant -> Axo.Frost
                     node.note.isMe -> Axo.Linen
                     else -> Axo.TextSecondary
                 }
-                drawText(text, color = color, topLeft = Offset(cx - text.size.width / 2f, cy + node.radius * dot + 3.dp.toPx()))
+                val grow = f.grow[id] ?: 0f
+                val top = c.y + node.radius * dot * (1f + 0.35f * grow) + 3.dp.toPx()
+                drawText(text, color = color, topLeft = Offset(c.x - text.size.width / 2f, top), alpha = alpha)
             }
         }
 
@@ -348,6 +418,9 @@ fun BrainGraph(
                 camera.focus = null
                 camera.refit()
             }
+            GraphButton(AxoIcons.Follow, if (follow) "Ne plus suivre Axo" else "Suivre Axo", active = follow) { onFollowChange(!follow) }
+            val canReplay = remember(revision) { live.canReplay }
+            if (canReplay) GraphButton(AxoIcons.Replay, "Rejouer ce qu'Axo vient de faire") { live.replay(LiveBrain.now()) }
         }
 
         val hint = when {
@@ -356,26 +429,60 @@ fun BrainGraph(
             nodes.isEmpty() -> "Aucune note pour ce filtre."
             else -> null
         }
-        if (hint != null) {
-            Text(
-                hint,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Axo.Muted,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
-            )
-        }
-
         val note = selected?.let { byId[it] }
-        if (note != null) {
-            GraphNoteCard(
-                note = note,
-                dormant = note.id in dormant,
-                links = links.neighbors(note.id).size,
-                onOpen = { onOpenNote(note.id) },
-                modifier = Modifier.align(Alignment.BottomCenter),
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            LiveCaption(
+                live,
+                clock = { clock },
+                title = { byId[it]?.title },
+                modifier = Modifier
+                    .padding(bottom = 10.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Axo.Ember)
+                    .border(BorderStroke(1.dp, Axo.EmberBorder), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
+            if (hint != null && note == null) {
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Axo.Muted,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+                )
+            }
+            if (note != null) {
+                GraphNoteCard(
+                    note = note,
+                    dormant = note.id in dormant,
+                    links = links.neighbors(note.id).size,
+                    onOpen = { onOpenNote(note.id) },
+                )
+            }
         }
     }
+}
+
+/** Recentre doucement la caméra sur [focus], sauf juste après un geste du doigt. */
+private fun followAxo(
+    camera: GraphCamera,
+    focus: String?,
+    drawing: GraphDrawing?,
+    visible: Set<String>,
+    size: IntSize,
+    density: Float,
+    now: Long,
+) {
+    if (focus == null || drawing == null || focus !in visible || size == IntSize.Zero || camera.offset.isUnspecified) return
+    val touched = camera.touched
+    if (touched != null && now - touched < FOLLOW_PAUSE) return
+    val i = drawing.positions.indexOf(focus)
+    if (i < 0) return
+    val s = camera.scale * density
+    val target = Offset(size.width / 2f - drawing.positions.x[i] * s, size.height * 0.4f - drawing.positions.y[i] * s)
+    val delta = target - camera.offset
+    if (delta.getDistance() < 0.5f) return
+    camera.offset = camera.offset + delta * 0.08f
+    camera.moved = true
 }
 
 /** Cadre [visible] dans l'écran, avec une marge pour les noms. */
@@ -447,17 +554,17 @@ private fun LegendRow(color: Color, label: String) {
 }
 
 @Composable
-private fun GraphButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun GraphButton(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
     Box(
         Modifier
             .size(44.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(Axo.Card)
-            .border(BorderStroke(1.dp, Axo.Line), RoundedCornerShape(14.dp))
+            .background(if (active) Axo.Ember else Axo.Card)
+            .border(BorderStroke(1.dp, if (active) Axo.AmberBorder else Axo.Line), RoundedCornerShape(14.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = Axo.TextSecondary, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = label, tint = if (active) Axo.Amber else Axo.TextSecondary, modifier = Modifier.size(20.dp))
     }
 }
 

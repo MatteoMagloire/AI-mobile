@@ -47,6 +47,11 @@ object AxoIcons {
     val Close = stroke("close", "M6 6l12 12M18 6L6 18")
     val Filter = stroke("filter", "M4 6h16M7 12h10M10 18h4")
     val Recenter = stroke("recenter", circle(12f, 12f, 3f), "M12 3v3M12 18v3M3 12h3M18 12h3")
+    /** Suivre Axo : un œil. */
+    val Follow = stroke("follow", "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z", circle(12f, 12f, 2.8f))
+
+    /** Rejouer : une flèche qui fait le tour. */
+    val Replay = stroke("replay", "M4.27 9.93A8 8 0 1 1 6.34 17.66", "M4.27 9.93L3.6 5.6M4.27 9.93l4.3-.9")
     val Link = stroke(
         "link",
         "M10 14a4 4 0 0 1 0-5.66l2.34-2.34a4 4 0 0 1 5.66 5.66l-1.17 1.17",

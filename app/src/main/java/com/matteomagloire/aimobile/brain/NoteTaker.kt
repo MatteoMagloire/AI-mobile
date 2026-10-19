@@ -85,8 +85,8 @@ sealed interface Reading {
  */
 class NoteTaker(private val name: String = USER_NAME) {
 
-    /** Lit un échange et met le Cerveau à jour. */
-    suspend fun read(exchange: Exchange, store: NoteStore, model: ModelAccess): Reading {
+    /** Lit un échange et met le Cerveau à jour. [events] : ce qu'il fait, geste par geste, pour l'écran. */
+    suspend fun read(exchange: Exchange, store: NoteStore, model: ModelAccess, events: (BrainEvent) -> Unit = {}): Reading {
         val start = System.nanoTime()
         val command = BrainCommands.parse(exchange.message)
         // « Oublie… » : fait au moment de l'envoi, il n'y a rien à noter.
@@ -101,14 +101,35 @@ class NoteTaker(private val name: String = USER_NAME) {
             return Reading.Done(entry)
         }
         val text = ((command as? BrainCommand.Remember)?.what ?: exchange.message).take(MAX_MESSAGE_CHARS)
-        val thought = model.withModel { runner ->
-            think(runner, text, forced, store.notes.value, store.forgotten(), exchange.previousReply)
-        } ?: return Reading.Later
-        // Même interrompu à la fin, ce qui a été compris est noté.
-        val entry = withContext(NonCancellable) {
-            store.record(exchange, excerpt(exchange.message), thought, (System.nanoTime() - start) / 1_000_000)
+        var working = false
+        try {
+            val thought = model.withModel { runner ->
+                working = true
+                events(BrainEvent.Begin(BrainEvent.Work.NOTES))
+                think(runner, text, forced, store.notes.value, store.forgotten(), exchange.previousReply, events)
+            } ?: return Reading.Later
+            // Même interrompu à la fin, ce qui a été compris est noté.
+            val entry = withContext(NonCancellable) {
+                val before = store.notes.value
+                store.record(exchange, excerpt(exchange.message), thought, (System.nanoTime() - start) / 1_000_000).also {
+                    if (it.outcome == NoteOutcome.NOTED) wrote(before, store.notes.value, it, events)
+                }
+            }
+            return Reading.Done(entry)
+        } finally {
+            if (working) events(BrainEvent.End(BrainEvent.Work.NOTES))
         }
-        return Reading.Done(entry)
+    }
+
+    /** Ce que la prise de notes vient d'écrire, pour l'écran : chaque note touchée, et ses liens nouveaux. */
+    private fun wrote(before: List<Note>, after: List<Note>, entry: JournalEntry, events: (BrainEvent) -> Unit) {
+        val existed = before.mapTo(HashSet()) { it.id }
+        val old = NoteLinks.links(before).edges.toHashSet()
+        val fresh = NoteLinks.links(after).edges.filter { it !in old }
+        for (id in entry.noted.map { it.noteId }.distinct()) {
+            val links = fresh.mapNotNull { (a, b) -> if (a == id) b else if (b == id) a else null }
+            events(BrainEvent.Wrote(id, created = id !in existed, links = links))
+        }
     }
 
     /** Lit les consignes sans rien noter (Test du Cerveau : pour mesurer la suite à part). */
@@ -129,6 +150,7 @@ class NoteTaker(private val name: String = USER_NAME) {
         notes: List<Note>,
         forgotten: List<String>,
         previousReply: String = "",
+        events: (BrainEvent) -> Unit = {},
     ): Thought {
         if (!runner.begin(instructions)) return failed("début")
         try {
@@ -146,6 +168,8 @@ class NoteTaker(private val name: String = USER_NAME) {
             for (line in fresh) {
                 val target = target(line, notes)
                 val note = target.id?.let { id -> notes.firstOrNull { it.id == id } }
+                // Il relit la note où va le fait, pour ne rien noter deux fois.
+                if (note != null) events(BrainEvent.Read(note.id))
                 val words = TextMatch.words(line.fact)
                 val current = note?.facts.orEmpty()
                 val supersedes = current.filter { coverage(TextMatch.words(it.text), words) >= SUPERSEDE }.map { it.text }

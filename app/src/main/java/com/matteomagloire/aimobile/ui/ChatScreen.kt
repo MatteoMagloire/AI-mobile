@@ -56,6 +56,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.matteomagloire.aimobile.brain.LiveBrain
 import com.matteomagloire.aimobile.chat.ChatMessage
 import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.ui.theme.Axo
@@ -70,11 +71,13 @@ import java.util.Locale
 @Composable
 fun ChatScreen(
     state: ChatUiState,
+    live: LiveBrain,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onReasoningChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBrain: () -> Unit,
+    onOpenLive: () -> Unit,
     onOpenNote: (String) -> Unit,
     onUndoBrain: () -> Unit,
     onDismissBrain: () -> Unit,
@@ -129,6 +132,21 @@ fun ChatScreen(
                         message = item.message,
                         streaming = state.generating && item.last,
                         showSpeed = state.settings.showSpeed,
+                        // Au-dessus de la réponse en cours : Axo dans sa mémoire, en direct.
+                        live = if (item.last && !item.message.fromUser && state.settings.liveInChat) {
+                            {
+                                LiveMiniGraph(
+                                    live = live,
+                                    visible = state.generating,
+                                    notes = state.brain.notes,
+                                    links = state.brain.links,
+                                    dormantDays = state.settings.dormantDays,
+                                    onOpen = onOpenLive,
+                                )
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -263,7 +281,7 @@ private fun dayLabel(day: LocalDate, today: LocalDate): String = when (day) {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: Boolean) {
+private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: Boolean, live: (@Composable () -> Unit)? = null) {
     if (message.fromUser) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
@@ -281,6 +299,7 @@ private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: B
     }
     var showThinking by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        live?.invoke()
         // La réflexion du mode Reasoning est repliée par défaut.
         if (message.thinking.isNotEmpty()) {
             ThinkingChip(message, expanded = showThinking) { showThinking = !showThinking }
