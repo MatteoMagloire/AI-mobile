@@ -145,6 +145,15 @@ class RecallAndCommandsTest {
         assertTrue(Recall.block(emptyList(), nothingToForget = true).contains("rien noté"))
         val remember = Recall.block(emptyList(), remember = true)
         assertTrue(remember.contains("c'est noté") && remember.endsWith("[Message de Matteo]\n"))
+        // Sa question est dite : « tu c'est comment je m'appelle » se lisait « c'est comment ? ».
+        assertEquals(
+            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Il s'appelle Matteo.\n[Message de Matteo, qui te demande son prénom]\n",
+            Recall.block(listOf("Il s'appelle Matteo."), asksName = true),
+        )
+        val distress = Recall.block(emptyList(), distress = true)
+        assertTrue(distress.contains("3114") && distress.endsWith("[Message de Matteo]\n"))
+        // Pas un souvenir : rien à montrer sous son message, rien à ne pas redonner.
+        assertEquals(emptySet<String>(), Recall.alreadyGiven(listOf(distress)))
     }
 
     @Test

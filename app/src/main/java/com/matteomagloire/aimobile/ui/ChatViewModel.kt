@@ -11,6 +11,7 @@ import com.matteomagloire.aimobile.brain.BrainEvent
 import com.matteomagloire.aimobile.brain.BrainScenario
 import com.matteomagloire.aimobile.brain.BrainTestResult
 import com.matteomagloire.aimobile.brain.BrainTestRow
+import com.matteomagloire.aimobile.brain.Distress
 import com.matteomagloire.aimobile.brain.Exchange
 import com.matteomagloire.aimobile.brain.Fact
 import com.matteomagloire.aimobile.brain.Forgetting
@@ -345,7 +346,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val prepared = try {
                 brain.prepare(message, now, recentMemories, startOfSession, s.settings.dormantDays)
             } catch (e: Exception) {
-                Brain.Prepared("")
+                // Sans les souvenirs, un message de détresse reste pris au sérieux.
+                Brain.Prepared(Recall.block(emptyList(), distress = Distress.inMessage(message)))
             }
             if (prepared.memory.isNotEmpty()) {
                 _state.update { st ->

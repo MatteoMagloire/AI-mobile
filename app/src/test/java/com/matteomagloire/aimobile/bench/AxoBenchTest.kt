@@ -2,6 +2,7 @@ package com.matteomagloire.aimobile.bench
 
 import com.matteomagloire.aimobile.brain.BrainCommand
 import com.matteomagloire.aimobile.brain.BrainCommands
+import com.matteomagloire.aimobile.brain.Distress
 import com.matteomagloire.aimobile.brain.Recall
 import com.matteomagloire.aimobile.chat.AnswerText
 import com.matteomagloire.aimobile.chat.ChatMessage
@@ -86,7 +87,12 @@ class AxoBenchTest {
     private fun memoryFor(case: BenchCase): String {
         val given = Recall.alreadyGiven(emptyList())
         val r = Recall.recollect(case.notes, case.message, given, case.startOfSession, dormant = emptySet())
-        return Recall.block(r.facts, remember = BrainCommands.parse(case.message) is BrainCommand.Remember)
+        return Recall.block(
+            r.facts,
+            remember = BrainCommands.parse(case.message) is BrainCommand.Remember,
+            asksName = Recall.asksName(case.message),
+            distress = Distress.inMessage(case.message),
+        )
     }
 
     private fun history(case: BenchCase): List<ChatMessage> =
