@@ -88,13 +88,29 @@ object Recall {
     fun aboutMe(notes: List<Note>, limit: Int, exclude: Set<String> = emptySet()): List<Fact> =
         notes.firstOrNull { it.isMe }?.facts.orEmpty().filter { NoteLinks.plain(it.text) !in exclude }.takeLast(limit).reversed()
 
+    // Écrit vite, « tu sais » devient « tu sai », « tu ses », « tu c'est » ou « tu c ».
     private val ABOUT_ME = Regex(
-        "(tu te (souviens|rappelles)|te souviens|te rappelles|rappelle[- ]toi|tu sais (quoi|ce que|des choses|qui je|comment je|ou j)|" +
+        "\\b(tu te (souvien|rap+el)|te souvien|te rap+el+es|rap+el+e?[- ]toi|" +
+            "tu (sais|sait|sai|ses|c.est|c) (quoi|ce que|des choses|qui je|comment je|ou j)|" +
             "que sais[- ]tu|qu.est[- ]ce que tu sais|tu connais (de|sur) moi|tu me connais|ce que tu sais (de|sur) moi)",
     )
+    private val NAME = Regex("\\b(comment j(e )?m.ap+el|j(e )?m.ap+el+e? comment|comment tu m.ap+el|mon (pre)?nom\\b)")
 
-    /** Le message demande ce qu'Axo sait de lui. */
-    fun asksAboutMe(message: String): Boolean = ABOUT_ME.containsMatchIn(TextMatch.fold(message))
+    /** Le message demande ce qu'Axo sait de lui, son prénom compris. */
+    fun asksAboutMe(message: String): Boolean = ABOUT_ME.containsMatchIn(TextMatch.fold(message)) || asksName(message)
+
+    /** Le message demande son prénom (« tu sais comment je m'appelle ? »). */
+    fun asksName(message: String): Boolean = NAME.containsMatchIn(TextMatch.fold(message))
+
+    /**
+     * Ce qu'Axo relit sur lui avant [message] : son prénom s'il le demande (aucune note ne le dit, Axo
+     * le sait toujours), puis les derniers faits de « Moi » si le message parle de lui ou si [always].
+     */
+    fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
+        val facts = if (always || asksAboutMe(message)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
+        val first = "Il s'appelle $name.".takeIf { asksName(message) && it !in exclude }
+        return listOfNotNull(first) + facts
+    }
 
     /** Les faits déjà glissés dans [memories] (les messages récents, sans les [[…]]) : inutile de les redonner. */
     fun alreadyGiven(memories: List<String>): Set<String> =
