@@ -31,6 +31,8 @@ object Axo {
     val EmberBorder = Color(0xFF3E2D1F)
     val AmberBorder = Color(0xFF5A3E26)
     val Frost = Color(0xFF7C8BA1) // mémoire froide
+    val Night = Color(0xFF13151A) // cartes des notes en veille
+    val NightBorder = Color(0xFF23272F)
     val Blush = Color(0xFFE4677A) // erreurs, joues d'Axo
     val Good = Color(0xFF8BC79A) // cible atteinte
 }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.LocalDate
 
 /**
  * Le Cerveau d'Axo : ses notes, les souvenirs glissés devant les messages, et la prise de notes en
@@ -30,7 +31,7 @@ class Brain(
     context: Context,
     private val engine: LlamaEngine,
     private val sessions: SessionCache,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) {
     val store = NoteStore(File(context.filesDir, "brain"))
     private val taker = NoteTaker()
@@ -144,9 +145,16 @@ class Brain(
     /**
      * Prépare un message avant qu'il parte (rapide, sans le modèle) : fait un « oublie… », et choisit
      * les souvenirs à glisser devant. [recentMemories] : souvenirs déjà glissés dans les derniers
-     * messages ; [startOfSession] : premier message depuis longtemps, Axo relit ce qu'il sait de lui.
+     * messages ; [startOfSession] : premier message depuis longtemps, Axo relit ce qu'il sait de lui ;
+     * [dormantDays] : délai de mise en veille, Axo puise d'abord dans les notes actives.
      */
-    suspend fun prepare(message: String, time: Long, recentMemories: List<String>, startOfSession: Boolean): Prepared {
+    suspend fun prepare(
+        message: String,
+        time: Long,
+        recentMemories: List<String>,
+        startOfSession: Boolean,
+        dormantDays: Int = DEFAULT_DORMANT_DAYS,
+    ): Prepared {
         store.load()
         val command = BrainCommands.parse(message)
         if (command is BrainCommand.Forget) {
@@ -155,15 +163,22 @@ class Brain(
         }
         val given = Recall.alreadyGiven(recentMemories)
         val notes = store.notes.value
-        val hits = Recall.search(notes, message, limit = 3, exclude = given).map { it.fact.text }
+        val today = LocalDate.now()
+        val dormant = notes.filter { it.isDormant(today, dormantDays) }.map { it.id }.toSet()
+        val found = Recall.search(notes, message, limit = 3, exclude = given, dormant = dormant)
+        // Axo lit les faits sans les crochets des liens écrits à la main.
+        val hits = found.map { NoteLinks.plain(it.fact.text) }
         val aboutMe = if (startOfSession || Recall.asksAboutMe(message)) {
-            Recall.aboutMe(notes, 4, given + hits).map { it.text }
+            Recall.aboutMe(notes, 4, given + hits).map { NoteLinks.plain(it.text) }
         } else {
             emptyList()
         }
         // Peu de lignes : chaque mot lu retarde le premier mot de la réponse.
         var chars = 0
         val facts = (aboutMe + hits).distinct().takeWhile { chars += it.length; chars <= MAX_MEMORY_CHARS }
+        // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
+        val used = found.filter { !it.note.isMe && NoteLinks.plain(it.fact.text) in facts }.map { it.note.id }.distinct()
+        if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
         return Prepared(Recall.block(facts, remember = command is BrainCommand.Remember))
     }
 
@@ -173,5 +188,11 @@ class Brain(
 
         /** Au-delà de ce silence, le prochain message commence une nouvelle séance. */
         const val SESSION_GAP_MS = 3 * 60 * 60 * 1000L
+
+        /** Une note ni ouverte ni utilisée depuis ce nombre de jours passe en veille (réglable). */
+        const val DEFAULT_DORMANT_DAYS = 30
+
+        /** Les délais proposés dans les réglages. */
+        val DORMANT_CHOICES = listOf(1, 7, 30, 90)
     }
 }

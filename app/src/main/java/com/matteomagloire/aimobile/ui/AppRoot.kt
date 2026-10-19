@@ -4,43 +4,80 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.matteomagloire.aimobile.model.ModelCatalog
+import java.time.LocalDate
 
 private enum class Screen { CHAT, SETTINGS, SPEED, BENCH, BRAIN, NOTE, BRAIN_TEST }
+
+/** Un écran ouvert : l'écran, et la note pour NOTE. */
+private data class Dest(val screen: Screen, val noteId: String = "") {
+    fun encode() = if (screen == Screen.NOTE) "NOTE:$noteId" else screen.name
+
+    companion object {
+        fun decode(saved: String): List<Dest> = saved.split('|').mapNotNull { s ->
+            if (s.startsWith("NOTE:")) Dest(Screen.NOTE, s.removePrefix("NOTE:")) else Screen.entries.firstOrNull { it.name == s }?.let { Dest(it) }
+        }.ifEmpty { listOf(Dest(Screen.CHAT)) }
+    }
+}
+
+private val MEASURES = setOf(Screen.SPEED, Screen.BENCH, Screen.BRAIN_TEST)
 
 @Composable
 fun AppRoot(vm: ChatViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var screen by rememberSaveable { mutableStateOf(Screen.CHAT) }
-    // La note ouverte, et l'écran où revenir : le Cerveau, ou la conversation (« Voir »).
-    var noteId by rememberSaveable { mutableStateOf("") }
-    var noteBack by rememberSaveable { mutableStateOf(Screen.BRAIN) }
+    // Les écrans ouverts, la conversation au fond : « Retour » revient au précédent. Une note ouverte
+    // depuis une autre revient à celle-ci.
+    var saved by rememberSaveable { mutableStateOf(Screen.CHAT.name) }
+    val stack = remember(saved) { Dest.decode(saved) }
+    val top = stack.last()
+    // Le Cerveau garde son onglet, sa recherche et son graphe quand on ouvre une note puis qu'on revient.
+    val brainView = remember { BrainView() }
+    // La note qu'on vient de réveiller en l'ouvrant : elle était en veille.
+    var woke by remember { mutableStateOf<String?>(null) }
 
-    fun openNote(id: String, from: Screen) {
-        noteId = id
-        noteBack = from
+    fun go(next: List<Dest>) {
+        saved = next.joinToString("|") { it.encode() }
+    }
+
+    fun push(dest: Dest) = go(Dest.decode(saved) + dest)
+
+    fun openNote(id: String) {
+        val today = LocalDate.now()
+        woke = id.takeIf { state.brain.notes.firstOrNull { n -> n.id == id }?.isDormant(today, state.settings.dormantDays) == true }
         vm.openNote(id)
-        screen = Screen.NOTE
+        // Déjà ouverte juste avant (de lien en lien) : on y revient, sans tourner en rond dans la pile.
+        val now = Dest.decode(saved)
+        val at = now.indexOfLast { it.screen == Screen.NOTE && it.noteId == id }
+        if (at >= 0 && now.drop(at).all { it.screen == Screen.NOTE }) go(now.take(at + 1)) else push(Dest(Screen.NOTE, id))
+    }
+
+    fun openBrain() {
+        brainView.reset()
+        push(Dest(Screen.BRAIN))
+    }
+
+    // « Voir dans le graphe » : le Cerveau déjà ouvert plus bas, ou un nouveau.
+    fun showInGraph(id: String) {
+        brainView.showInGraph(id)
+        val now = Dest.decode(saved)
+        val at = now.indexOfLast { it.screen == Screen.BRAIN }
+        if (at >= 0) go(now.take(at + 1)) else push(Dest(Screen.BRAIN))
     }
 
     // Quitter un écran de mesure arrête la mesure en cours : la conversation reprend.
     fun back() {
-        screen = when (screen) {
-            Screen.SPEED, Screen.BENCH, Screen.BRAIN_TEST -> {
-                vm.stopMeasure()
-                Screen.SETTINGS
-            }
-            Screen.NOTE -> noteBack
-            else -> Screen.CHAT
-        }
+        val now = Dest.decode(saved)
+        if (now.last().screen in MEASURES) vm.stopMeasure()
+        if (now.size > 1) go(now.dropLast(1))
     }
-    BackHandler(enabled = screen != Screen.CHAT) { back() }
+    BackHandler(enabled = stack.size > 1) { back() }
 
-    when (screen) {
+    when (top.screen) {
         Screen.SETTINGS -> SettingsScreen(
             settings = state.settings,
             instructModel = ModelCatalog.byId(state.settings.instructModelId) ?: ModelCatalog.INSTRUCT,
@@ -49,9 +86,9 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             onChange = vm::updateSettings,
             onReasoningChange = vm::setReasoningMode,
             onClearConversation = vm::clearConversation,
-            onOpenSpeedTest = { screen = Screen.SPEED },
-            onOpenBench = { screen = Screen.BENCH },
-            onOpenBrainTest = { screen = Screen.BRAIN_TEST },
+            onOpenSpeedTest = { push(Dest(Screen.SPEED)) },
+            onOpenBench = { push(Dest(Screen.BENCH)) },
+            onOpenBrainTest = { push(Dest(Screen.BRAIN_TEST)) },
             onClearBrain = vm::clearBrain,
             onBack = { back() },
         )
@@ -81,15 +118,23 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
         )
         Screen.BRAIN -> BrainScreen(
             state = state,
-            onOpenNote = { openNote(it, Screen.BRAIN) },
+            view = brainView,
+            onOpenNote = { openNote(it) },
             onUndo = vm::undoNotes,
             onBack = { back() },
         )
         Screen.NOTE -> NoteScreen(
-            note = state.brain.notes.firstOrNull { it.id == noteId },
-            onEditFact = { old, text, before -> vm.editFact(noteId, old, text, before) },
-            onSaveRaw = { vm.rewriteNote(noteId, it) },
-            onDeleteNote = { vm.deleteNote(noteId) },
+            note = state.brain.notes.firstOrNull { it.id == top.noteId },
+            notes = state.brain.notes,
+            links = state.brain.links,
+            dormantDays = state.settings.dormantDays,
+            wokeUp = woke == top.noteId,
+            onOpenNote = { openNote(it) },
+            onShowInGraph = { showInGraph(top.noteId) },
+            onSetLinks = { vm.setLinks(top.noteId, it) },
+            onEditFact = { old, text, before -> vm.editFact(top.noteId, old, text, before) },
+            onSaveRaw = { vm.rewriteNote(top.noteId, it) },
+            onDeleteNote = { vm.deleteNote(top.noteId) },
             onBack = { back() },
         )
         Screen.BRAIN_TEST -> BrainTestScreen(
@@ -106,7 +151,7 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
                 wifiOnly = state.settings.wifiOnlyDownloads,
                 error = state.error,
                 onDownload = vm::downloadModel,
-                onOpenSettings = { screen = Screen.SETTINGS },
+                onOpenSettings = { push(Dest(Screen.SETTINGS)) },
             )
         } else {
             ChatScreen(
@@ -114,9 +159,9 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
                 onSend = vm::send,
                 onStop = vm::stop,
                 onReasoningChange = vm::setReasoningMode,
-                onOpenSettings = { screen = Screen.SETTINGS },
-                onOpenBrain = { screen = Screen.BRAIN },
-                onOpenNote = { openNote(it, Screen.CHAT) },
+                onOpenSettings = { push(Dest(Screen.SETTINGS)) },
+                onOpenBrain = { openBrain() },
+                onOpenNote = { openNote(it) },
                 onUndoBrain = vm::undoBrainChip,
                 onDismissBrain = vm::dismissBrainChip,
                 onDismissError = vm::dismissError,

@@ -55,19 +55,30 @@ fun AxoTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.(
     }
 }
 
-/** Carte de la DA : fond légèrement plus clair, bordure fine, coins de 20. */
+/** Carte de la DA : fond légèrement plus clair, bordure fine, coins de 20. [asleep] : une note en veille, plus sombre. */
 @Composable
 fun AxoCard(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
+    asleep: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val background = when {
+        highlighted -> Axo.Ember
+        asleep -> Axo.Night
+        else -> Axo.Card
+    }
+    val border = when {
+        highlighted -> Axo.AmberBorder
+        asleep -> Axo.NightBorder
+        else -> Axo.Line
+    }
     Column(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(if (highlighted) Axo.Ember else Axo.Card)
-            .border(BorderStroke(1.dp, if (highlighted) Axo.AmberBorder else Axo.Line), RoundedCornerShape(20.dp))
+            .background(background)
+            .border(BorderStroke(1.dp, border), RoundedCornerShape(20.dp))
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,

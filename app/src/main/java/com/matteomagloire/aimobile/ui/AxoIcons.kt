@@ -45,6 +45,13 @@ object AxoIcons {
     val Delete = stroke("delete", "M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13")
     val Check = stroke("check", "M5 12.5l4.5 4.5L19 7")
     val Close = stroke("close", "M6 6l12 12M18 6L6 18")
+    val Filter = stroke("filter", "M4 6h16M7 12h10M10 18h4")
+    val Recenter = stroke("recenter", circle(12f, 12f, 3f), "M12 3v3M12 18v3M3 12h3M18 12h3")
+    val Link = stroke(
+        "link",
+        "M10 14a4 4 0 0 1 0-5.66l2.34-2.34a4 4 0 0 1 5.66 5.66l-1.17 1.17",
+        "M14 10a4 4 0 0 1 0 5.66l-2.34 2.34a4 4 0 0 1-5.66-5.66l1.17-1.17",
+    )
 
     /**
      * Le visage d'Axo (icône piste C) en couleurs : tête ambre, branchies-liens, un lien givre

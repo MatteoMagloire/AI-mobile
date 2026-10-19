@@ -9,12 +9,13 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
   - **Reasoning** en mode « Réflexion » (réfléchit avant de répondre)
 - Mises à jour de l'app via **GitHub Releases**
 
-## Ce que fait la version actuelle (v0.3)
+## Ce que fait la version actuelle (v0.4)
 - Télécharge le modèle au premier lancement (environ 2,1 Go, une seule fois, Wi-Fi par défaut, avec reprise).
 - Une seule conversation qui continue : elle est gardée sur le téléphone et reprend au redémarrage. Bouton Stop, et « Effacer la conversation » dans les réglages.
 - **Reprise instantanée** : la mémoire de travail du modèle (cache KV) est enregistrée quand l'app passe en arrière-plan, puis rechargée au retour. Le prompt système est aussi mis en cache, pour ne pas le relire à chaque ouverture.
 - Bouton « Réflexion » : bascule sur le modèle Reasoning ; sa réflexion est repliée au-dessus de la réponse.
 - **Cerveau** (prototype) : après chaque réponse, en tâche de fond, le modèle Instruct note ce qui dure sur l'utilisateur dans des notes Markdown (`filesDir/brain/notes/*.md`, la note « Moi » d'abord). Elle se fait dans un second contexte llama.cpp sur les mêmes poids : le modèle ne voit que le dernier message (avec la question d'Axo avant une réponse courte), jamais la conversation, qui reste intacte. Ses consignes et ses exemples restent dans ce contexte : lus une fois, leur KV est gardé dans `cacheDir/notes-kv/` et rechargé aux lancements suivants (relus seulement si le modèle ou llama.cpp change). Une étape relève les faits (« Note : fait. », format imposé par une grammaire GBNF) ; le code écarte ce que le message ne dit pas, ce qui ne dure pas et les doublons, et une seconde étape ne sert que si un fait ressemblant est déjà noté (lequel n'est plus vrai maintenant, avec le message sous les yeux). Un message envoyé interrompt la prise de notes. « Retiens que… » et « Oublie… » sont compris. Avant chaque message, les faits proches (recherche par mots) sont glissés devant pour le modèle seulement. Écran Cerveau : recherche, étiquettes, journal avec « Annuler », lecture mise au propre ou brute, correction à la main. **Test du Cerveau** (Réglages > Mesures) : 10 messages écrits d'avance, faits retenus, notés pour rien, durée de lecture et d'écriture.
+- **Liens du Cerveau** : une note qui en nomme une autre (son titre, ou le prénom pour « Moi ») y est reliée. Les liens sont calculés par le code à chaque changement, sans le modèle ; on en ajoute à la main avec `[[Titre]]` ou la rubrique `## Liens`. Chaque note montre ses liens et ses rétroliens, et les noms soulignés ouvrent la note nommée. **Onglet Graphe** : disposition par ressorts (Fruchterman et Reingold, `brain/GraphLayout.kt`), « Moi » au centre, la même d'une visite à l'autre, zoom, filtres (actives, étiquette, autour d'une note). **Mise en veille** : une note ni ouverte ni utilisée depuis le délai réglé (30 jours par défaut, Réglages > Cerveau) passe en veille ; elle reste cherchable, pèse moins dans les souvenirs, et se réveille dès qu'on s'en sert.
 - **Test de vitesse** (Réglages > Mesures) : premier mot, vitesse d'écriture, lecture d'un long message, mémoire utilisée et chauffe, avec les cibles du cahier des charges. Un test d'endurance de 10 minutes compare la vitesse de la fin à celle du début.
 - **Comparer les fichiers** (Réglages > Mesures) : Q4_K_M, UD-Q4_K_XL et Q4_0 répondent aux 10 mêmes questions, puis tu votes à l'aveugle. L'app recommande le meilleur fichier et peut l'utiliser tout de suite.
 - Réglages : créativité, longueur max, personnalité d'Axo (prompt système), affichage de la vitesse, Wi-Fi uniquement.
@@ -27,7 +28,7 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
 | `app/src/main/cpp/` | Pont JNI vers llama.cpp (version figée dans `CMakeLists.txt`), sauvegarde et reprise du cache KV |
 | `.../llm/` | Moteur local : chargement, streaming, séparation de la réflexion, cache des sessions (`SessionCache`) |
 | `.../chat/` | Conversation enregistrée et fenêtre d'historique envoyée au modèle |
-| `.../brain/` | Cerveau : notes Markdown, prise de notes en tâche de fond, souvenirs, « retiens / oublie », journal |
+| `.../brain/` | Cerveau : notes Markdown, prise de notes en tâche de fond, souvenirs, « retiens / oublie », journal, liens, disposition du graphe |
 | `.../measure/` | Test de vitesse, endurance, comparaison à l'aveugle, mesures mémoire et chauffe |
 | `.../model/` | Catalogue des modèles (3 fichiers par modèle) et téléchargement en arrière-plan |
 | `.../update/` | Vérification, téléchargement, vérification SHA-256 et installation des mises à jour |

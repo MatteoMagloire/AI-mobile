@@ -3,8 +3,10 @@ package com.matteomagloire.aimobile.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -33,6 +35,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.matteomagloire.aimobile.BuildConfig
+import com.matteomagloire.aimobile.brain.Brain
 import com.matteomagloire.aimobile.model.ModelInfo
 import com.matteomagloire.aimobile.settings.DEFAULT_SYSTEM_PROMPT
 import com.matteomagloire.aimobile.settings.Settings
@@ -152,6 +155,24 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = Axo.Muted,
                 )
+            }
+
+            SectionTitle("Cerveau")
+            AxoCard {
+                Text("Mise en veille des notes", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Une note que ni toi ni Axo n'avez ouverte ou utilisée depuis ce délai passe en veille. " +
+                        "Axo puise d'abord dans les notes actives ; rien n'est effacé.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Axo.Muted,
+                )
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Brain.DORMANT_CHOICES.forEach { days ->
+                        ChoiceChip(dormantDelay(days), selected = settings.dormantDays == days, enabled = true) {
+                            onChange { it.copy(dormantDays = days) }
+                        }
+                    }
+                }
             }
 
             SectionTitle("Mesures")
