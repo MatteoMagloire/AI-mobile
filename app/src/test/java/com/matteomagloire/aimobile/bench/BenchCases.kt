@@ -30,7 +30,6 @@ object Checks {
     const val MAX_CHARS = 600
     const val MAX_CHARS_LONG = 1_500
 
-    private val ACTION = Regex("\\*[^*\\n]+\\*")
     private val HEADING = Regex("(?m)^\\s*#{1,6}\\s")
     private val LIST_ITEM = Regex("(?m)^\\s*([-•–]|\\d+[.)])\\s")
     private val ASSISTANT = listOf("en tant qu'ia", "en tant qu'intelligence artificielle", "en tant qu'assistant", "n'hesite pas")
@@ -55,10 +54,13 @@ object Checks {
         if (a.length < chars) null else "${a.length} caractères"
     }
 
-    /** Les consignes de la personnalité, pour chaque réponse. */
+    /**
+     * Les consignes de la personnalité, pour chaque réponse telle que l'appli l'affiche (gras et
+     * italique sans astérisques, sans les actions entre astérisques : voir AnswerText).
+     */
     fun style(long: Boolean): List<Check> = listOfNotNull(
         Check("un emoji au plus") { a -> emojis(a).takeIf { it > 1 }?.let { "$it emojis" } },
-        Check("ni actions ni gras entre astérisques") { a -> ACTION.find(a)?.let { "« ${it.value} »" } },
+        Check("pas d'astérisque à l'écran") { a -> if ('*' in a) "« * » à l'écran" else null },
         Check("pas de titres") { a -> HEADING.find(a)?.let { "un titre" } },
         Check("pas de formules d'assistant") { a -> ASSISTANT.firstOrNull { has(a, it) }?.let { "« $it »" } },
         // Ses souvenirs lui arrivent sous « [Mémoire d'Axo] » : il s'en sert, sans les citer ni en écrire.
@@ -173,6 +175,32 @@ val BENCH_CASES = listOf(
         "message-a-ecrire", "un texte demandé, écrit vite", "tu peu m'aider a ecrire un message pour l'anniv de ma mere",
         long = true, checks = listOf(Checks.saysOneOf("anniversaire", "anniv")),
     ),
+    BenchCase(
+        "message-anniversaire", "le même texte, écrit sans fautes", "Tu peux m'aider à écrire un message pour l'anniversaire de ma mère ?",
+        long = true, checks = listOf(Checks.saysOneOf("anniversaire", "anniv")),
+    ),
     BenchCase("avis", "donner son avis", "tu prefere les chats ou les chiens ?", checks = listOf(Checks.saysOneOf("chat", "chien"))),
     BenchCase("blague", "de l'humour", "raconte moi une blague"),
+    BenchCase(
+        "souvenir-conversation", "se souvenir de ce qu'il vient de dire, pas du Cerveau", "Au fait, tu te souviens comment s'appelle mon chien ?",
+        before = listOf(
+            "J'ai adopté un chien hier, il s'appelle Rex !" to "Trop bien ! Rex, c'est un super nom. Il a quel âge ?",
+            "Deux mois, c'est un bébé" to "Trop mignon ! Profite bien de lui.",
+        ),
+        checks = listOf(Checks.says("Rex")),
+    ),
+    BenchCase(
+        "reveil", "ne pas promettre ce qu'il ne peut pas faire", "Tu peux me réveiller demain à 7h ?",
+        checks = listOf(Checks.saysOneOf("peux pas", "ne peux", "impossible", "alarme"), Checks.never("je te réveille", "je te réveillerai", "c'est noté")),
+    ),
+    BenchCase("culture", "une question de culture générale", "c'est quoi la capitale de l'Australie ?", checks = listOf(Checks.says("Canberra"))),
+    BenchCase(
+        "chat-malade", "un souvenir utile, et un bon conseil", "Pixel mange plus rien depuis hier, je m'inquiète",
+        checks = listOf(Checks.saysOneOf("vétérinaire", "véto")),
+    ),
+    BenchCase(
+        "bonne-nouvelle", "se réjouir avec lui", "J'AI EU MON PERMIS !!!",
+        checks = listOf(Checks.saysOneOf("bravo", "félicitations", "félicite", "génial", "trop bien", "fier", "incroyable")),
+    ),
+    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250))),
 )

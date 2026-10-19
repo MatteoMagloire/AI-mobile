@@ -124,9 +124,9 @@ class RecallAndCommandsTest {
         assertEquals(listOf("Il s'appelle Matteo."), name.facts)
         assertTrue(name.readsMe)
         assertEquals(emptyList<String>(), name.kept)
-        // « Qui je suis » : ce qu'il sait de lui.
+        // « Qui je suis » : son prénom, puis ce qu'il sait de lui.
         val me = Recall.recollect(notes, "tu sais qui je suis ?", emptySet(), startOfSession = false, dormant = emptySet())
-        assertEquals(listOf("Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans."), me.facts)
+        assertEquals(listOf("Il s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans."), me.facts)
         // Un message ordinaire : seulement ce qui s'en rapproche, sans « Moi ».
         val pixel = Recall.recollect(notes, "Comment va Pixel ?", emptySet(), startOfSession = false, dormant = emptySet())
         assertEquals(setOf("Matteo a un chat qui s'appelle Pixel.", "Il adore dormir sur le clavier."), pixel.facts.toSet())

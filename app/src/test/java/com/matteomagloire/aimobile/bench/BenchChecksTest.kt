@@ -1,5 +1,6 @@
 package com.matteomagloire.aimobile.bench
 
+import com.matteomagloire.aimobile.chat.AnswerText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -27,10 +28,14 @@ class BenchChecksTest {
         assertEquals(listOf("2 emojis", "ne dit pas « Matteo »"), (Checks.style(long = false) + Checks.says("Matteo")).mapNotNull { it.failure(answer) })
     }
 
+    /** Ce que l'appli affiche. */
+    private fun shown(answer: String) = AnswerText.styled(answer).text
+
     @Test
     fun actionsHeadingsAndLists() {
-        assertEquals(listOf("« *s'étire* »"), styleFailures("*s'étire* Salut !"))
-        assertEquals(listOf("« *super* »"), styleFailures("C'est **super**"))
+        // L'appli n'affiche ni les actions ni les astérisques du gras : ce qu'elle laisse rate.
+        assertEquals(emptyList<String>(), styleFailures(shown("*s'étire* Salut ! C'est **super**")))
+        assertEquals(listOf("« * » à l'écran"), styleFailures(shown("*\"Pourquoi le livre a-t-il peur ? Parce qu'il a peur de se faire *remixer* !\"*")))
         assertEquals(listOf("un titre"), styleFailures("## Recette\nDes pâtes."))
         assertEquals(listOf("une liste de 2 lignes"), styleFailures("Deux idées :\n- un ciné\n- un resto"))
         assertEquals(listOf("« n'hesite pas »"), styleFailures("N’hésite pas à me redemander."))

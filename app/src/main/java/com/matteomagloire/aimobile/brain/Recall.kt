@@ -153,14 +153,15 @@ object Recall {
     fun asksName(message: String): Boolean = NAME.containsMatchIn(TextMatch.fold(message))
 
     /**
-     * Ce qu'Axo relit sur lui avant [message] : son prénom s'il le demande (aucune note ne le dit, Axo
-     * le sait toujours), sinon les derniers faits de « Moi » si le message parle de lui, et toujours
-     * si [always]. Pour son prénom, le prénom seul : avec le reste, Axo récite tout ce qu'il sait de lui.
+     * Ce qu'Axo relit sur lui avant [message] : s'il parle de lui, son prénom (aucune note ne le dit,
+     * Axo le sait toujours) puis les derniers faits de « Moi », aussi relus si [always]. S'il demande
+     * son prénom, le prénom seul : avec le reste, Axo récitait tout ce qu'il sait de lui.
      */
     fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
         val askName = asksName(message)
-        val facts = if (always || (!askName && asksAboutMe(message))) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
-        val first = "Il s'appelle $name.".takeIf { askName && it !in exclude }
+        val asksMe = asksAboutMe(message)
+        val facts = if (always || (asksMe && !askName)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
+        val first = "Il s'appelle $name.".takeIf { asksMe && it !in exclude }
         return listOfNotNull(first) + facts
     }
 

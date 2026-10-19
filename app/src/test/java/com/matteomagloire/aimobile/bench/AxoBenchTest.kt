@@ -3,6 +3,7 @@ package com.matteomagloire.aimobile.bench
 import com.matteomagloire.aimobile.brain.BrainCommand
 import com.matteomagloire.aimobile.brain.BrainCommands
 import com.matteomagloire.aimobile.brain.Recall
+import com.matteomagloire.aimobile.chat.AnswerText
 import com.matteomagloire.aimobile.chat.ChatMessage
 import com.matteomagloire.aimobile.chat.HistoryWindow
 import com.matteomagloire.aimobile.llm.LlamaEngine
@@ -61,7 +62,9 @@ class AxoBenchTest {
                 val ms = (System.nanoTime() - start) / 1_000_000
                 val text = ThinkParser.parse(raw.toString()).answer.trim()
                 val tokens = engine.lastStats().genTokens
-                val failures = (Checks.style(case.long) + case.checks).mapNotNull { it.failure(text) } +
+                // Vérifié tel que l'appli l'affiche.
+                val shown = AnswerText.styled(text).text
+                val failures = (Checks.style(case.long) + case.checks).mapNotNull { it.failure(shown) } +
                     listOfNotNull(if (tokens >= settings.maxTokens) "coupée à ${settings.maxTokens} tokens" else null)
                 Answer(text, tokens, ms, failures)
             }
@@ -112,6 +115,8 @@ class AxoBenchTest {
         }
         appendLine("**$passed réponses sur ${all.size} passent.**")
         appendLine()
+        appendLine("Les réponses sont vérifiées et montrées comme l'appli les affiche : gras et italique sans astérisques, actions entre astérisques retirées.")
+        appendLine()
         appendLine("| Cas | Ce qu'on vérifie | " + seeds.joinToString(" | ") { "Graine $it" } + " |")
         appendLine("|---|---|" + seeds.joinToString("") { "---|" })
         for ((case, answers) in results) {
@@ -143,9 +148,11 @@ class AxoBenchTest {
             }
             for ((seed, a) in seeds.zip(answers)) {
                 val verdict = if (a.failures.isEmpty()) "ok" else "rate : " + a.failures.joinToString(" ; ")
-                appendLine("**Axo**, graine $seed (${a.tokens} tokens, ${"%.1f".format(Locale.FRANCE, a.ms / 1000.0)} s, $verdict) :")
+                val hidden = AnswerText.actions(a.text).takeIf { it.isNotEmpty() }?.let { " · pas affiché : « ${it.joinToString(" », « ")} »" }.orEmpty()
+                appendLine("**Axo**, graine $seed (${a.tokens} tokens, ${"%.1f".format(Locale.FRANCE, a.ms / 1000.0)} s, $verdict$hidden) :")
                 appendLine()
-                a.text.lines().forEach { appendLine("> $it") }
+                // Le gras et l'italique restent en Markdown : le résumé de GitHub les affiche comme l'appli.
+                AnswerText.withoutActions(a.text).lines().forEach { appendLine("> $it") }
                 appendLine()
             }
         }
