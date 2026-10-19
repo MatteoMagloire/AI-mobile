@@ -70,7 +70,7 @@ object Recall {
         exclude: Set<String> = emptySet(),
         dormant: Set<String> = emptySet(),
     ): List<Hit> {
-        val q = TextMatch.words(query)
+        val q = TextMatch.words(query) - ASKING
         if (q.isEmpty()) return emptyList()
         // Les mots du titre comptent pour chaque fait de la note : « Pixel » rappelle tout ce qui le concerne.
         val docs = notes.flatMap { n ->
@@ -87,6 +87,12 @@ object Recall {
             .take(limit)
             .toList()
     }
+
+    /**
+     * Mots d'une question qui ne disent pas de quoi elle parle : « comment je m'appelle ? » ne doit pas
+     * ramener tous les faits où quelqu'un « s'appelle » (son prénom, lui, Axo le sait toujours).
+     */
+    private val ASKING = setOf("comment", "appelle", "appeler", "appele", "appelee", "nom", "prenom")
 
     /** Un lien suivi : le fait trouvé [from] nomme la note [note], où Axo lit [fact]. */
     data class Hop(val from: Hit, val note: Note, val fact: Fact)
@@ -146,13 +152,23 @@ object Recall {
     /** Le message demande son prénom (« tu sais comment je m'appelle ? »). */
     fun asksName(message: String): Boolean = NAME.containsMatchIn(TextMatch.fold(message))
 
+    // « tu c'est comment je m'appelle » se lisait « c'est comment ? » : « Matteo, c'est un peu comme un ami virtuel ».
+    private val TU_CEST = Regex("\\btu c'?est\\b")
+
+    /** Le message écrit « tu sais » comme « tu c'est ». */
+    fun writesTuCest(message: String): Boolean = TU_CEST.containsMatchIn(TextMatch.fold(message).replace('’', '\''))
+
     /**
-     * Ce qu'Axo relit sur lui avant [message] : son prénom s'il le demande (aucune note ne le dit, Axo
-     * le sait toujours), puis les derniers faits de « Moi » si le message parle de lui ou si [always].
+     * Ce qu'Axo relit sur lui avant [message] : s'il parle de lui, son prénom (aucune note ne le dit,
+     * Axo le sait toujours) puis les derniers faits de « Moi », aussi relus si [always]. S'il demande
+     * son prénom, le prénom seul : avec le reste, Axo récitait tout ce qu'il sait de lui. Lui dire en
+     * plus qu'il demande son prénom l'a fait parler du sien, au banc : « Moi c'est Axo. Et toi ? ».
      */
     fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
-        val facts = if (always || asksAboutMe(message)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
-        val first = "Il s'appelle $name.".takeIf { asksName(message) && it !in exclude }
+        val askName = asksName(message)
+        val asksMe = asksAboutMe(message)
+        val facts = if (always || (asksMe && !askName)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
+        val first = "Il s'appelle $name.".takeIf { asksMe && it !in exclude }
         return listOfNotNull(first) + facts
     }
 
@@ -163,16 +179,20 @@ object Recall {
     /**
      * Ce que le modèle lit avant le message. Vide s'il n'y a rien à dire : le message est lu tel quel.
      * [forgotten] : faits qu'il vient d'oublier à la demande de l'utilisateur ; [nothingToForget] : la
-     * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message.
+     * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message ;
+     * [cues] : ce qu'Axo lit juste avant ce message ([Cue.of]) ; [tuCest] : il a écrit « tu c'est »
+     * pour « tu sais » ([writesTuCest]).
      */
     fun block(
         facts: List<String>,
         forgotten: List<String> = emptyList(),
         nothingToForget: Boolean = false,
         remember: Boolean = false,
+        cues: Set<Cue> = emptySet(),
+        tuCest: Boolean = false,
         name: String = USER_NAME,
     ): String {
-        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember) return ""
+        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && cues.isEmpty() && !tuCest) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
@@ -183,8 +203,9 @@ object Recall {
                 forgotten.forEach { append("- ").append(it).append('\n') }
             }
             if (nothingToForget) append("[Mémoire d'Axo : tu n'avais rien noté qui corresponde à ce qu'il veut te faire oublier]\n")
-            if (remember) append("[Mémoire d'Axo : ce qu'il te demande de retenir sera noté dans ton Cerveau]\n")
-            append("[Message de $name]\n")
+            if (remember) append("[Mémoire d'Axo : tu notes dans ton Cerveau ce qu'il te demande de retenir, dis-lui simplement que c'est noté]\n")
+            for (cue in Cue.entries) if (cue in cues) append("[Pour Axo : ").append(cue.text).append("]\n")
+            append(if (tuCest) "[Message de $name, où « tu c'est » veut dire « tu sais »]\n" else "[Message de $name]\n")
         }
     }
 }
