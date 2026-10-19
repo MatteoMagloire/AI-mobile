@@ -16,7 +16,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 data class Settings(
-    val temperature: Float = 0.7f,
+    /** Créativité du modèle du quotidien (le mode Réflexion garde ses propres réglages). */
+    val temperature: Float = DEFAULT_TEMPERATURE,
     val topP: Float = 0.95f,
     val maxTokens: Int = 512,
     val reasoningMode: Boolean = false,
@@ -37,17 +38,29 @@ data class Settings(
     val liveInChat: Boolean = true,
 )
 
+/**
+ * Créativité conseillée par Mistral pour Ministral 3 Instruct (0,1 à 0,15). Plus haut, il s'éparpille :
+ * à 0,7, la valeur des premières versions, il mélangeait les sujets et inventait.
+ */
+const val DEFAULT_TEMPERATURE = 0.15f
+
+/** Le modèle Reasoning garde les réglages conseillés par Mistral pour lui. */
+const val REASONING_TEMPERATURE = 0.7f
+const val REASONING_TOP_P = 0.95f
+
 /** Personnalité d'Axo (cahier des charges, « Base de ses instructions »). */
 const val DEFAULT_SYSTEM_PROMPT =
     "Tu es Axo, l'ami virtuel de Matteo. Tu n'es pas un assistant : tu es un ami qui est là pour l'aider. " +
         "Tu le tutoies, tu parles naturellement, avec chaleur et un peu d'humour. " +
-        "Tu te souviens de ce qu'il te confie et tu t'en sers. " +
         "Tu es honnête, tu donnes ton avis, et tu dis quand tu ne sais pas.\n" +
-        "Tu vis dans son téléphone et tu fonctionnes sans internet : tu ne connais ni la météo ni l'actualité, " +
-        "et tu le dis simplement plutôt que d'inventer. " +
+        "Réponds à son dernier message, sans revenir sur un sujet passé s'il ne le relance pas. " +
+        "Écris comme un message entre amis : quelques phrases, sans titres ni gras ni actions entre astérisques, " +
+        "un emoji au plus. Une liste ou des détails seulement s'il en demande.\n" +
+        "Ce que tu sais de lui arrive sous [Mémoire d'Axo] : sers-t'en si ça aide, sans le réciter, " +
+        "et n'invente rien sur lui ni sur ses proches.\n" +
+        "Tu vis dans son téléphone, sans internet : tu ne connais ni la météo ni l'actualité, et tu le dis plutôt que d'inventer. " +
         "Si on te demande ce que tu es, tu assumes d'être son ami virtuel, sans prétendre être humain.\n" +
-        "Jamais de formules d'assistant comme « En tant qu'IA » ou « N'hésite pas à ». " +
-        "Réponds en français, plutôt court, sauf s'il veut des détails. " +
+        "Jamais de formules d'assistant comme « En tant qu'IA » ou « N'hésite pas à ». Réponds en français. " +
         "Si un sujet te dépasse (santé, danger, moral au plus bas), aide-le et encourage-le à en parler " +
         "à quelqu'un de confiance ou à un professionnel."
 
@@ -73,6 +86,7 @@ class SettingsRepository(private val context: Context) {
         val dormantDays = intPreferencesKey("dormant_days")
         val followAxo = booleanPreferencesKey("follow_axo")
         val liveInChat = booleanPreferencesKey("live_in_chat")
+        val samplingVersion = intPreferencesKey("sampling_version")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -92,6 +106,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.dormantDays] = next.dormantDays
             p[Keys.followAxo] = next.followAxo
             p[Keys.liveInChat] = next.liveInChat
+            p[Keys.samplingVersion] = SAMPLING_VERSION
             p.storeSystemPrompt(next.systemPrompt)
         }
     }
@@ -104,7 +119,7 @@ class SettingsRepository(private val context: Context) {
     private fun Preferences.toSettings(): Settings {
         val d = Settings()
         return Settings(
-            temperature = this[Keys.temperature] ?: d.temperature,
+            temperature = temperatureFrom(this[Keys.temperature], this[Keys.samplingVersion]),
             topP = this[Keys.topP] ?: d.topP,
             maxTokens = this[Keys.maxTokens] ?: d.maxTokens,
             reasoningMode = this[Keys.reasoningMode] ?: d.reasoningMode,
@@ -122,6 +137,18 @@ class SettingsRepository(private val context: Context) {
         )
     }
 }
+
+// La créativité par défaut jusqu'à la v0.4.1, enregistrée chez tous ceux qui ont touché aux réglages,
+// et le numéro des réglages qui l'a remplacée.
+internal const val OLD_DEFAULT_TEMPERATURE = 0.7f
+private const val SAMPLING_VERSION = 2
+
+/**
+ * Créativité enregistrée -> créativité à utiliser : l'ancienne valeur par défaut, enregistrée avant
+ * les réglages n° [SAMPLING_VERSION], devient celle conseillée. Une valeur choisie depuis reste.
+ */
+internal fun temperatureFrom(stored: Float?, version: Int?): Float =
+    if (stored == null || (version == null && stored == OLD_DEFAULT_TEMPERATURE)) DEFAULT_TEMPERATURE else stored
 
 /** Prompt enregistré -> prompt à utiliser : l'ancien prompt par défaut devient celui d'Axo. */
 internal fun systemPromptFrom(stored: String?): String =

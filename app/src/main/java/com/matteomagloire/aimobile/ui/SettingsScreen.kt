@@ -38,6 +38,7 @@ import com.matteomagloire.aimobile.BuildConfig
 import com.matteomagloire.aimobile.brain.Brain
 import com.matteomagloire.aimobile.model.ModelInfo
 import com.matteomagloire.aimobile.settings.DEFAULT_SYSTEM_PROMPT
+import com.matteomagloire.aimobile.settings.DEFAULT_TEMPERATURE
 import com.matteomagloire.aimobile.settings.Settings
 import com.matteomagloire.aimobile.ui.theme.Axo
 import com.matteomagloire.aimobile.ui.theme.MonoStyle
@@ -110,12 +111,21 @@ fun SettingsScreen(
                     "Créativité : ${"%.2f".format(Locale.FRANCE, settings.temperature)}",
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                Text(
+                    "Mistral conseille ${"%.2f".format(Locale.FRANCE, DEFAULT_TEMPERATURE)} : plus haut, Axo s'éparpille et invente. " +
+                        "Le mode réflexion garde ses propres réglages.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Axo.Muted,
+                )
                 Slider(
                     value = settings.temperature,
                     onValueChange = { v -> onChange { it.copy(temperature = (v * 20).roundToInt() / 20f) } },
                     valueRange = 0f..1.5f,
                     colors = sliderColors(),
                 )
+                if (settings.temperature != DEFAULT_TEMPERATURE) {
+                    AxoTextButton("Revenir à la créativité conseillée", onClick = { onChange { it.copy(temperature = DEFAULT_TEMPERATURE) } })
+                }
                 Text("Longueur max des réponses : ${settings.maxTokens} tokens", style = MaterialTheme.typography.bodyLarge)
                 Slider(
                     value = settings.maxTokens.toFloat(),
