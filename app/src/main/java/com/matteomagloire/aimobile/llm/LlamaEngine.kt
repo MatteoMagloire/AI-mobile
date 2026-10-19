@@ -1,5 +1,6 @@
 package com.matteomagloire.aimobile.llm
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +50,8 @@ class LlamaEngine {
     private val _state = MutableStateFlow<State>(State.Empty)
     val state: StateFlow<State> = _state.asStateFlow()
 
+    // Lu sans le verrou par [abortTask].
+    @Volatile
     private var initialized = false
 
     /** Cœurs utilisés pour les calculs : moins de cœurs, moins de chauffe. */
@@ -178,6 +181,37 @@ class LlamaEngine {
         }
     }.flowOn(llamaThread)
 
+    /**
+     * Travail de fond sur la conversation (prise de notes) : [beginTask], des étapes ([taskStep]),
+     * puis [endTask], qui retire tout ce que le travail a ajouté. La conversation reprend ensuite
+     * exactement où elle en était, sans rien relire. Entre les deux, rien d'autre ne doit toucher à la
+     * conversation : les appelants passent par [SessionCache.use].
+     *
+     * [reserve] : tokens nécessaires au travail. False s'il ne peut pas commencer.
+     */
+    suspend fun beginTask(reserve: Int): Boolean = locked {
+        if (_state.value !is State.Ready) return@locked false
+        val code = LlamaNative.beginTask(reserve)
+        if (code != 0) Log.w(TAG, "travail de fond refusé (code $code)")
+        code == 0
+    }
+
+    /** Réponse la plus probable à [prompt], au format imposé par la grammaire GBNF [grammar]. Null si l'étape échoue. */
+    suspend fun taskStep(prompt: String, grammar: String, maxTokens: Int): String? = locked {
+        if (_state.value !is State.Ready) return@locked null
+        val text = LlamaNative.taskStep(prompt, grammar, maxTokens)
+        if (text == null) Log.w(TAG, "étape du travail de fond arrêtée (code ${LlamaNative.taskError()})")
+        text
+    }
+
+    /** False si la conversation n'a pas pu être remise en état : elle est alors vide, à reprendre. */
+    suspend fun endTask(): Boolean = locked { _state.value !is State.Ready || LlamaNative.endTask() == 0 }
+
+    /** Arrête au plus vite l'étape en cours du travail de fond, sans attendre : appelable à tout moment. */
+    fun abortTask() {
+        if (initialized) LlamaNative.abortTask()
+    }
+
     suspend fun unload() = locked {
         if (_state.value is State.Ready) LlamaNative.unload()
         systemPromptInMemory = null
@@ -185,6 +219,8 @@ class LlamaEngine {
     }
 
     companion object {
+        private const val TAG = "LlamaEngine"
+
         /** Contexte limité à 4096 tokens pour économiser la RAM. */
         const val DEFAULT_CONTEXT = 4096
 

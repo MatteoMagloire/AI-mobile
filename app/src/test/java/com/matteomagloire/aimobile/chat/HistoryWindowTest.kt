@@ -48,6 +48,13 @@ class HistoryWindowTest {
     }
 
     @Test
+    fun theModelSeesTheMemoryBeforeTheMessage() {
+        // Les souvenirs glissés devant un message font partie de ce que le modèle a lu.
+        val msgs = listOf(ChatMessage(fromUser = true, text = "et Pixel ?", memory = "[Mémoire]\n- Pixel est un chat.\n"), bot("Il dort."))
+        assertEquals(listOf(true to "[Mémoire]\n- Pixel est un chat.\net Pixel ?", false to "Il dort."), HistoryWindow.turns(msgs))
+    }
+
+    @Test
     fun selectKeepsEverythingWhenItFits() {
         val turns = listOf(true to "salut", false to "bonjour", true to "ça va ?", false to "oui")
         assertEquals(turns, HistoryWindow.select(turns, budgetChars = 1000))

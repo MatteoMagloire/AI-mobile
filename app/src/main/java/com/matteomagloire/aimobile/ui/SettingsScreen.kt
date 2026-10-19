@@ -52,9 +52,12 @@ fun SettingsScreen(
     onClearConversation: () -> Unit,
     onOpenSpeedTest: () -> Unit,
     onOpenBench: () -> Unit,
+    onOpenBrainTest: () -> Unit,
+    onClearBrain: () -> Unit,
     onBack: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmClearBrain by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
     // Copie locale : le texte suit la frappe sans attendre l'enregistrement des réglages.
     var prompt by rememberSaveable { mutableStateOf(settings.systemPrompt) }
@@ -71,6 +74,17 @@ fun SettingsScreen(
                 TextButton(onClick = { confirmClear = false; onClearConversation() }) { Text("Effacer", color = Axo.Blush) }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Annuler") } },
+        )
+    }
+    if (confirmClearBrain) {
+        AlertDialog(
+            onDismissRequest = { confirmClearBrain = false },
+            title = { Text("Effacer le Cerveau ?") },
+            text = { Text("Toutes les notes d'Axo et son journal seront supprimés du téléphone. La conversation reste. C'est définitif.") },
+            confirmButton = {
+                TextButton(onClick = { confirmClearBrain = false; onClearBrain() }) { Text("Effacer", color = Axo.Blush) }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearBrain = false }) { Text("Annuler") } },
         )
     }
     if (showLicenses) LicensesDialog(onDismiss = { showLicenses = false })
@@ -154,6 +168,12 @@ fun SettingsScreen(
                     "Q4_K_M, UD-Q4_K_XL ou Q4_0 : nos 10 questions, à l'aveugle",
                     onOpenBench,
                 )
+                EntryRow(
+                    AxoIcons.Brain,
+                    "Test du Cerveau",
+                    "10 messages écrits d'avance : ce qu'Axo retient, et en combien de temps",
+                    onOpenBrainTest,
+                )
                 Text(
                     "Fichiers utilisés : ${instructModel.quant} (Instruct) · ${reasoningModel.quant} (Réflexion)",
                     style = MonoStyle,
@@ -174,6 +194,7 @@ fun SettingsScreen(
             SectionTitle("Données")
             AxoCard {
                 AxoTextButton("Effacer la conversation", onClick = { confirmClear = true }, color = Axo.Blush)
+                AxoTextButton("Effacer le Cerveau", onClick = { confirmClearBrain = true }, color = Axo.Blush)
             }
 
             SectionTitle("À propos")

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.matteomagloire.aimobile.brain.Brain
 import com.matteomagloire.aimobile.chat.ConversationStore
 import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.llm.SessionCache
@@ -25,6 +26,9 @@ class AiMobileApp : Application() {
 
     val conversation by lazy { ConversationStore(this) }
 
+    /** Les notes d'Axo, et la prise de notes en tâche de fond. */
+    val brain by lazy { Brain(this, engine, sessions, appScope) }
+
     /** Travaux qui doivent aller au bout même si l'écran est fermé (enregistrements). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -35,7 +39,13 @@ class AiMobileApp : Application() {
         // En arrière-plan, Android peut fermer l'app à tout moment : on enregistre la conversation
         // du moteur pour la retrouver telle quelle au retour.
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                brain.resume()
+            }
+
             override fun onStop(owner: LifecycleOwner) {
+                // La prise de notes attendra le retour : l'enregistrement passe avant.
+                brain.interrupt()
                 appScope.launch { sessions.use { save(engine) } }
             }
         })
