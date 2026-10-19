@@ -35,6 +35,13 @@ class RecallAndCommandsTest {
     }
 
     @Test
+    fun recallIgnoresHowTheQuestionIsAsked() {
+        // « s'appelle », « comment » : rien sur le sujet ; « chat », si.
+        assertEquals(emptyList<Recall.Hit>(), Recall.search(notes, "tu sais comment je m'appelle ?"))
+        assertEquals(listOf("Matteo a un chat qui s'appelle Pixel."), Recall.search(notes, "Comment s'appelle mon chat ?").map { it.fact.text })
+    }
+
+    @Test
     fun recallSkipsWhatWasJustGiven() {
         val given = setOf("Matteo a un chat qui s'appelle Pixel.")
         assertEquals(listOf("Il adore dormir sur le clavier."), Recall.search(notes, "Et Pixel ?", exclude = given).map { it.fact.text })
@@ -95,10 +102,12 @@ class RecallAndCommandsTest {
         assertTrue(Recall.asksName("je m'appelle comment déjà"))
         assertFalse(Recall.asksName("Comment tu t'appelles ?"))
         assertFalse(Recall.asksName("Mon nombre préféré c'est 7"))
-        // Aucune note ne dit son prénom : Axo le relit d'abord, puis ce qu'il sait de lui.
+        // Aucune note ne dit son prénom : Axo le relit, seul (avec le reste, il récitait tout).
+        assertEquals(listOf("Il s'appelle Matteo."), Recall.aboutMe("tu c'est comment je m'appelle", notes, always = false, limit = 2, exclude = emptySet()))
+        // En début de conversation, ce qu'il sait de lui vient après.
         assertEquals(
             listOf("Il s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris."),
-            Recall.aboutMe("tu c'est comment je m'appelle", notes, always = false, limit = 2, exclude = emptySet()),
+            Recall.aboutMe("tu c'est comment je m'appelle", notes, always = true, limit = 2, exclude = emptySet()),
         )
         assertEquals(listOf("Il s'appelle Matteo."), Recall.aboutMe("Tu connais mon prénom ?", emptyList(), always = false, limit = 4, exclude = emptySet()))
         // Déjà donné il y a peu : inutile de le redire.
@@ -110,14 +119,14 @@ class RecallAndCommandsTest {
 
     @Test
     fun recollectGathersWhatAxoRereads() {
-        // Son prénom d'abord, puis « Moi », puis ce que « s'appelle » trouve (le chat).
+        // Son prénom, rien d'autre : « s'appelle » ne ramène plus le chat.
         val name = Recall.recollect(notes, "tu c'est comment je m'appelle", emptySet(), startOfSession = false, dormant = emptySet())
-        assertEquals(
-            listOf("Il s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans.", "Matteo a un chat qui s'appelle Pixel."),
-            name.facts,
-        )
+        assertEquals(listOf("Il s'appelle Matteo."), name.facts)
         assertTrue(name.readsMe)
-        assertEquals(listOf("pixel"), name.kept)
+        assertEquals(emptyList<String>(), name.kept)
+        // « Qui je suis » : ce qu'il sait de lui.
+        val me = Recall.recollect(notes, "tu sais qui je suis ?", emptySet(), startOfSession = false, dormant = emptySet())
+        assertEquals(listOf("Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans."), me.facts)
         // Un message ordinaire : seulement ce qui s'en rapproche, sans « Moi ».
         val pixel = Recall.recollect(notes, "Comment va Pixel ?", emptySet(), startOfSession = false, dormant = emptySet())
         assertEquals(setOf("Matteo a un chat qui s'appelle Pixel.", "Il adore dormir sur le clavier."), pixel.facts.toSet())
@@ -134,7 +143,8 @@ class RecallAndCommandsTest {
         assertEquals("[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Matteo a 23 ans.\n[Message de Matteo]\n", block)
         assertEquals(setOf("Matteo a 23 ans."), Recall.alreadyGiven(listOf(block, "")))
         assertTrue(Recall.block(emptyList(), nothingToForget = true).contains("rien noté"))
-        assertTrue(Recall.block(emptyList(), remember = true).endsWith("[Message de Matteo]\n"))
+        val remember = Recall.block(emptyList(), remember = true)
+        assertTrue(remember.contains("c'est noté") && remember.endsWith("[Message de Matteo]\n"))
     }
 
     @Test

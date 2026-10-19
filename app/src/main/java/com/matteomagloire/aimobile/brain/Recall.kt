@@ -70,7 +70,7 @@ object Recall {
         exclude: Set<String> = emptySet(),
         dormant: Set<String> = emptySet(),
     ): List<Hit> {
-        val q = TextMatch.words(query)
+        val q = TextMatch.words(query) - ASKING
         if (q.isEmpty()) return emptyList()
         // Les mots du titre comptent pour chaque fait de la note : « Pixel » rappelle tout ce qui le concerne.
         val docs = notes.flatMap { n ->
@@ -87,6 +87,12 @@ object Recall {
             .take(limit)
             .toList()
     }
+
+    /**
+     * Mots d'une question qui ne disent pas de quoi elle parle : « comment je m'appelle ? » ne doit pas
+     * ramener tous les faits où quelqu'un « s'appelle » (son prénom, lui, Axo le sait toujours).
+     */
+    private val ASKING = setOf("comment", "appelle", "appeler", "appele", "appelee", "nom", "prenom")
 
     /** Un lien suivi : le fait trouvé [from] nomme la note [note], où Axo lit [fact]. */
     data class Hop(val from: Hit, val note: Note, val fact: Fact)
@@ -148,11 +154,13 @@ object Recall {
 
     /**
      * Ce qu'Axo relit sur lui avant [message] : son prénom s'il le demande (aucune note ne le dit, Axo
-     * le sait toujours), puis les derniers faits de « Moi » si le message parle de lui ou si [always].
+     * le sait toujours), sinon les derniers faits de « Moi » si le message parle de lui, et toujours
+     * si [always]. Pour son prénom, le prénom seul : avec le reste, Axo récite tout ce qu'il sait de lui.
      */
     fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
-        val facts = if (always || asksAboutMe(message)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
-        val first = "Il s'appelle $name.".takeIf { asksName(message) && it !in exclude }
+        val askName = asksName(message)
+        val facts = if (always || (!askName && asksAboutMe(message))) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
+        val first = "Il s'appelle $name.".takeIf { askName && it !in exclude }
         return listOfNotNull(first) + facts
     }
 
@@ -183,7 +191,7 @@ object Recall {
                 forgotten.forEach { append("- ").append(it).append('\n') }
             }
             if (nothingToForget) append("[Mémoire d'Axo : tu n'avais rien noté qui corresponde à ce qu'il veut te faire oublier]\n")
-            if (remember) append("[Mémoire d'Axo : ce qu'il te demande de retenir sera noté dans ton Cerveau]\n")
+            if (remember) append("[Mémoire d'Axo : tu notes dans ton Cerveau ce qu'il te demande de retenir, dis-lui simplement que c'est noté]\n")
             append("[Message de $name]\n")
         }
     }
