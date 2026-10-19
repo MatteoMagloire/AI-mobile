@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.model.ModelCatalog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,7 +27,7 @@ data class Settings(
     /** Affiche le temps du premier mot et la vitesse sous les réponses d'Axo. */
     val showSpeed: Boolean = false,
     /** Cœurs utilisés par le modèle (2 à 4) : moins de cœurs, moins de chauffe. */
-    val threads: Int = 4,
+    val threads: Int = LlamaEngine.DEFAULT_THREADS,
 )
 
 /** Personnalité d'Axo (cahier des charges, « Base de ses instructions »). */
@@ -101,7 +102,7 @@ class SettingsRepository(private val context: Context) {
             reasoningModelId = this[Keys.reasoningModel]?.takeIf { ModelCatalog.byId(it)?.reasoning == true }
                 ?: d.reasoningModelId,
             showSpeed = this[Keys.showSpeed] ?: d.showSpeed,
-            threads = (this[Keys.threads] ?: d.threads).coerceIn(2, 4),
+            threads = (this[Keys.threads] ?: d.threads).coerceIn(LlamaEngine.MIN_THREADS, LlamaEngine.MAX_THREADS),
         )
     }
 }

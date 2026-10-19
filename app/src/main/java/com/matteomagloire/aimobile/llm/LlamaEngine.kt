@@ -188,8 +188,8 @@ class LlamaEngine {
         /** Contexte limité à 4096 tokens pour économiser la RAM. */
         const val DEFAULT_CONTEXT = 4096
 
-        /** 4 threads = cœurs X1 + A78 ; les petits A55 ralentissent. */
-        const val DEFAULT_THREADS = 4
+        /** 3 threads : presque aussi rapide que 4 sur le S21, sans chauffer (Test de vitesse). */
+        const val DEFAULT_THREADS = 3
         const val MIN_THREADS = 2
         const val MAX_THREADS = 4
 
