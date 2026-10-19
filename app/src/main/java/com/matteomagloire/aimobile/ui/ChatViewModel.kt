@@ -20,6 +20,7 @@ import com.matteomagloire.aimobile.brain.NoteStore
 import com.matteomagloire.aimobile.brain.NoteTaker
 import com.matteomagloire.aimobile.brain.Reading
 import com.matteomagloire.aimobile.brain.Recall
+import com.matteomagloire.aimobile.brain.TaskInstructions
 import com.matteomagloire.aimobile.brain.TaskRunner
 import com.matteomagloire.aimobile.brain.TextMatch
 import com.matteomagloire.aimobile.chat.ChatMessage
@@ -197,8 +198,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { brain.store.journal.collect { j -> updateBrain { it.copy(journal = j) } } }
         viewModelScope.launch { brain.noting.collect { v -> updateBrain { it.copy(noting = v) } } }
         viewModelScope.launch { brain.noted.collect { e -> updateBrain { it.copy(chip = BrainChip.Noted(e)) } } }
-        // Conversation perdue pendant une prise de notes (très rare) : on la reprend.
-        viewModelScope.launch { brain.contextLost.collect { openChat() } }
         viewModelScope.launch(Dispatchers.IO) {
             // Charge la bibliothèque native hors du fil de l'interface.
             val info = try {
@@ -747,31 +746,45 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val notes = NoteStore(dir)
             notes.clear()
             val t0 = System.currentTimeMillis()
+            // Mesures de la dernière prise de notes, lues avant que le travail soit retiré.
+            var stats: LlamaEngine.TaskStats? = null
             val runner = object : TaskRunner {
-                override suspend fun begin(reserve: Int) = engine.beginTask(reserve)
+                // « Arrêter » annule la mesure : une interruption ne vaut que pour la prise de notes en cours.
+                override suspend fun begin(instructions: TaskInstructions) = engine.beginTask(instructions.messages, engine.taskEpoch())
                 override suspend fun step(prompt: String, grammar: String, maxTokens: Int) = engine.taskStep(prompt, grammar, maxTokens)
                 override suspend fun end() {
-                    check(engine.endTask()) { "La conversation du test n'a pas pu être remise en état" }
+                    stats = engine.taskStats()
+                    engine.endTask()
                 }
             }
             val access = object : ModelAccess {
                 override suspend fun <T> withModel(block: suspend (TaskRunner) -> T): T? = block(runner)
             }
             val taker = NoteTaker()
+            // Les consignes d'abord, mesurées à part : elles ne sont lues qu'une fois par chargement du modèle.
+            step("Lecture des consignes…", 0f)
+            stats = null
+            check(taker.prepare(runner)) { "La prise de notes n'a pas pu commencer" }
+            val prefix = stats
             val exchanges = BrainScenario.exchanges
             val rows = ArrayList<BrainTestRow>()
             var previousReply = ""
             for ((i, ex) in exchanges.withIndex()) {
-                step("Échange ${i + 1} sur ${exchanges.size}", i.toFloat() / (exchanges.size + 1))
+                step("Échange ${i + 1} sur ${exchanges.size}", (i + 1).toFloat() / (exchanges.size + 2))
                 engine.replay(listOf(true to ex.message, false to ex.reply))
+                stats = null
                 val start = System.nanoTime()
                 val reading = taker.read(Exchange(t0 + i + 1, ex.message, previousReply), notes, access)
                 val ms = (System.nanoTime() - start) / 1_000_000
-                rows += BrainScenario.score(ex, (reading as? Reading.Done)?.entry, ms)
+                val s = stats
+                rows += BrainScenario.score(ex, (reading as? Reading.Done)?.entry, ms).let { row ->
+                    if (s == null) row
+                    else row.copy(steps = s.steps, readMs = (s.prefixMs + s.promptMs).toLong(), writeMs = s.genMs.toLong())
+                }
                 previousReply = ex.reply
                 updateMeasure { it.copy(brainLive = rows.toList()) }
             }
-            step("Souvenirs…", exchanges.size.toFloat() / (exchanges.size + 1))
+            step("Souvenirs…", (exchanges.size + 1).toFloat() / (exchanges.size + 2))
             val final = notes.notes.value
             val start = System.nanoTime()
             val recalled = BrainScenario.recallChecks.count { check ->
@@ -789,6 +802,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 recallTotal = BrainScenario.recallChecks.size,
                 recallMs = recallMs,
                 notes = final.map { it.title to it.facts.size },
+                prefixTokens = prefix?.prefixTokens ?: 0,
+                prefixMs = prefix?.prefixMs?.toLong() ?: 0,
             )
             updateMeasure { it.copy(brain = result, brainLive = emptyList()) }
         }

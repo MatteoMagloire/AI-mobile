@@ -143,6 +143,13 @@ private fun ResultCard(r: BrainTestResult) {
             seconds(r.averageMs),
             target = "en moyenne, après la réponse · la plus longue : ${seconds(r.maxMs)}",
         )
+        if (r.prefixTokens > 0) {
+            MetricRow(
+                "Lecture des consignes",
+                seconds(r.prefixMs),
+                target = "${r.prefixTokens} tokens, une fois par chargement du modèle",
+            )
+        }
         if (r.notes.isNotEmpty()) {
             Text(
                 "Notes à la fin : " + r.notes.joinToString(" · ") { (title, facts) -> "$title ($facts)" },
@@ -174,6 +181,13 @@ private fun TestRow(index: Int, row: BrainTestRow) {
             else -> "${row.found} sur ${row.expected} retenu"
         }
         Text("$result · ${outcome(row.outcome)} · ${seconds(row.ms)}", style = MonoStyle, color = Axo.Muted)
+        if (row.steps > 0) {
+            Text(
+                "${row.steps} ${if (row.steps > 1) "étapes" else "étape"} · lecture ${seconds(row.readMs)} · écriture ${seconds(row.writeMs)}",
+                style = MonoStyle,
+                color = Axo.Muted,
+            )
+        }
         row.noted.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall, color = Axo.TextSecondary) }
     }
 }

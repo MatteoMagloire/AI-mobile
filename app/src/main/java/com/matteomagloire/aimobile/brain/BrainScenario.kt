@@ -14,11 +14,16 @@ data class BrainTestRow(
     val message: String,
     val expected: Int,
     val found: Int,
+    /** Les faits notés, chacun précédé de sa note (« Pixel : Pixel est le chat de Matteo. »). */
     val noted: List<String>,
     /** Faits notés alors qu'il n'y avait rien à retenir. */
     val unexpected: Int,
     val outcome: NoteOutcome,
     val ms: Long,
+    /** Étapes du modèle, et le temps passé à lire (consignes du message) puis à écrire. */
+    val steps: Int = 0,
+    val readMs: Long = 0,
+    val writeMs: Long = 0,
 )
 
 data class BrainTestResult(
@@ -32,6 +37,9 @@ data class BrainTestResult(
     val recallMs: Double,
     /** Les notes à la fin du test (titre et nombre de faits). */
     val notes: List<Pair<String, Int>>,
+    /** Consignes et exemples de la prise de notes, lus une fois avant le premier message. */
+    val prefixTokens: Int = 0,
+    val prefixMs: Long = 0,
 ) {
     val expected: Int get() = rows.sumOf { it.expected }
     val found: Int get() = rows.sumOf { it.found }
@@ -109,14 +117,14 @@ object BrainScenario {
 
     /** Compare ce qui a été noté pendant un échange à ce qui était attendu. */
     fun score(exchange: ScriptedExchange, entry: JournalEntry?, ms: Long): BrainTestRow {
-        val noted = entry?.noted?.map { it.text }.orEmpty()
-        val folded = noted.map { TextMatch.fold(it) }
+        val noted = entry?.noted.orEmpty()
+        val folded = noted.map { TextMatch.fold(it.text) }
         val found = exchange.expected.count { words -> folded.any { f -> words.all { f.contains(it) } } }
         return BrainTestRow(
             message = exchange.message,
             expected = exchange.expected.size,
             found = found,
-            noted = noted,
+            noted = noted.map { "${it.noteTitle} : ${it.text}" },
             unexpected = if (exchange.expected.isEmpty()) noted.size else 0,
             outcome = entry?.outcome ?: NoteOutcome.FAILED,
             ms = ms,
