@@ -51,7 +51,7 @@ add_library(aimobile SHARED llama_jni.cpp)
 target_compile_definitions(aimobile PRIVATE "LLAMA_CPP_REF=\"${LLAMA_CPP_REF}\"")
 
 if(ANDROID)
-    target_link_libraries(aimobile llama llama-common ggml-cpu android log)
+    target_link_libraries(aimobile llama llama-common android log)
 else()
     # Build hôte (vérification de compilation hors Android).
     find_package(JNI REQUIRED)
