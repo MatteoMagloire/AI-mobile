@@ -460,6 +460,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (model.id == s.instructModelId || model.id == s.reasoningModelId || measure?.isActive == true) return
         viewModelScope.launch {
             sessions.use { forgetModel(model.id) }
+            engine.forgetTaskCache(model.id)
             store.delete(model)
             refreshDownloaded()
         }
@@ -804,6 +805,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 notes = final.map { it.title to it.facts.size },
                 prefixTokens = prefix?.prefixTokens ?: 0,
                 prefixMs = prefix?.prefixMs?.toLong() ?: 0,
+                prefixRestoredTokens = prefix?.restoredTokens ?: 0,
+                prefixRestoreMs = prefix?.restoreMs?.toLong() ?: 0,
+                prefixSavedBytes = prefix?.savedBytes ?: 0,
             )
             updateMeasure { it.copy(brain = result, brainLive = emptyList()) }
         }

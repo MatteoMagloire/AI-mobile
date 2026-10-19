@@ -15,13 +15,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
 /**
  * Moteur LLM local (llama.cpp). Le modèle reste chargé entre deux questions ;
  * un seul modèle à la fois pour tenir dans le budget RAM du S21 (~3 Go).
+ *
+ * [taskCacheDir] : où garder les consignes lues du travail de fond, pour ne pas les relire à chaque
+ * lancement (null : relues à chaque chargement du modèle).
  */
-class LlamaEngine {
+class LlamaEngine(private val taskCacheDir: File? = null) {
 
     sealed interface State {
         data object Empty : State
@@ -43,7 +47,8 @@ class LlamaEngine {
 
     /**
      * Mesures d'un travail de fond : consignes lues (seulement la première fois), messages lus,
-     * réponses écrites, et nombre d'étapes.
+     * réponses écrites, nombre d'étapes, consignes reprises du lancement précédent, et taille du
+     * fichier où les consignes lues ont été gardées pour le prochain.
      */
     data class TaskStats(
         val prefixTokens: Int,
@@ -53,6 +58,9 @@ class LlamaEngine {
         val genTokens: Int,
         val genMs: Double,
         val steps: Int,
+        val restoredTokens: Int = 0,
+        val restoreMs: Double = 0.0,
+        val savedBytes: Long = 0,
     )
 
     // llama.cpp n'est pas thread-safe : les appels natifs passent un par un, sur un seul thread,
@@ -76,6 +84,14 @@ class LlamaEngine {
     /** Prompt système dont le KV est en tête du contexte (cache en mémoire), null sinon. */
     private var systemPromptInMemory: String? = null
 
+    // Consignes du travail de fond gardées sur le téléphone : clé du modèle chargé (id, taille du
+    // fichier, version de llama.cpp), si le fichier a déjà été essayé depuis le chargement, durée
+    // du rechargement au début du dernier travail (null : rien rechargé), et taille écrite.
+    private var taskCacheKey: String? = null
+    private var taskCacheTried = false
+    private var taskRestoreMs: Double? = null
+    private var taskSavedBytes = 0L
+
     private suspend fun <T> locked(block: () -> T): T = mutex.withLock { withContext(llamaThread) { block() } }
 
     private fun checkReady() = check(_state.value is State.Ready) { "Aucun modèle chargé" }
@@ -98,6 +114,8 @@ class LlamaEngine {
         systemPromptInMemory = null
         val start = System.nanoTime()
         val code = LlamaNative.load(file.absolutePath, contextSize, threads)
+        taskCacheKey = "$modelId|${file.length()}|$TASK_CACHE_FORMAT"
+        taskCacheTried = false
         _state.value = if (code == 0) State.Ready(modelId, (System.nanoTime() - start) / 1_000_000)
         else State.Failed("Impossible de charger le modèle (code $code)")
     }
@@ -208,8 +226,19 @@ class LlamaEngine {
      */
     suspend fun beginTask(instructions: List<String>, epoch: Int): Boolean = locked {
         if (_state.value !is State.Ready) return@locked false
+        taskRestoreMs = null
+        taskSavedBytes = 0
+        if (!taskCacheTried) {
+            taskCacheTried = true
+            restoreTaskPrefix()
+        }
         val code = LlamaNative.beginTask(instructions.toTypedArray(), epoch)
-        if (code != 0) Log.w(TAG, "travail de fond pas commencé (code $code)")
+        if (code != 0) {
+            Log.w(TAG, "travail de fond pas commencé (code $code)")
+        } else if (LlamaNative.taskStats()[0] > 0) {
+            // Consignes (re)lues : gardées pour le prochain lancement, avant que le travail n'y ajoute rien.
+            taskSavedBytes = saveTaskPrefix()
+        }
         code == 0
     }
 
@@ -228,7 +257,14 @@ class LlamaEngine {
     suspend fun taskStats(): TaskStats = locked {
         if (_state.value !is State.Ready) return@locked TaskStats(0, 0.0, 0, 0.0, 0, 0.0, 0)
         val s = LlamaNative.taskStats()
-        TaskStats(s[0].toInt(), s[1] / 1000.0, s[2].toInt(), s[3] / 1000.0, s[4].toInt(), s[5] / 1000.0, s[6].toInt())
+        val restoreMs = taskRestoreMs
+        TaskStats(
+            s[0].toInt(), s[1] / 1000.0, s[2].toInt(), s[3] / 1000.0, s[4].toInt(), s[5] / 1000.0, s[6].toInt(),
+            // Rechargées : ce qui en a servi, sans être relu (tout, si les consignes n'ont pas changé).
+            restoredTokens = if (restoreMs != null) s[7].toInt() else 0,
+            restoreMs = restoreMs ?: 0.0,
+            savedBytes = taskSavedBytes,
+        )
     }
 
     /** Époque des interruptions, à lire avant de commencer un travail de fond (voir [beginTask]). */
@@ -237,6 +273,81 @@ class LlamaEngine {
     /** Arrête au plus vite le travail de fond en cours, ou celui qui allait commencer : appelable à tout moment. */
     fun abortTask() {
         if (initialized) LlamaNative.abortTask()
+    }
+
+    /** Fichier du modèle supprimé : ses consignes gardées aussi. */
+    suspend fun forgetTaskCache(modelId: String) = withContext(Dispatchers.IO) {
+        taskCacheDir?.listFiles()?.filter { it.name.startsWith("$modelId.notes") }?.forEach { it.delete() }
+    }
+
+    // Sous le verrou, sur le fil de llama.cpp. Un fichier de consignes ne sert que s'il a sa méta,
+    // écrite en dernier, avec la clé du modèle chargé et la taille du fichier.
+    private fun restoreTaskPrefix() {
+        val dir = taskCacheDir ?: return
+        val key = taskCacheKey ?: return
+        val modelId = loadedModelId() ?: return
+        val file = File(dir, "$modelId.notes")
+        val meta = File(dir, "$modelId.notes.json")
+        // Présent seulement pendant un rechargement : s'il reste, le précédent a planté l'app.
+        val guard = File(dir, "notes.lock")
+        try {
+            if (guard.exists()) {
+                Log.w(TAG, "le dernier rechargement des consignes a échoué : elles seront relues")
+                dir.listFiles()?.forEach { it.delete() }
+                return
+            }
+            if (!file.exists() || !meta.exists()) return
+            val o = JSONObject(meta.readText())
+            if (o.optString("key") != key) return
+            val start = System.nanoTime()
+            guard.writeText("1")
+            val n = try {
+                LlamaNative.restoreTaskPrefix(file.absolutePath, o.getLong("bytes"))
+            } finally {
+                guard.delete()
+            }
+            if (n > 0) {
+                taskRestoreMs = (System.nanoTime() - start) / 1e6
+            } else if (n == -1) {
+                Log.w(TAG, "consignes gardées illisibles : elles seront relues")
+                meta.delete()
+                file.delete()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "consignes gardées pas rechargées", e)
+        }
+    }
+
+    /** Taille écrite, 0 si les consignes n'ont pas été gardées. */
+    private fun saveTaskPrefix(): Long {
+        val dir = taskCacheDir ?: return 0
+        val key = taskCacheKey ?: return 0
+        val modelId = loadedModelId() ?: return 0
+        val file = File(dir, "$modelId.notes")
+        val meta = File(dir, "$modelId.notes.json")
+        return try {
+            dir.mkdirs()
+            meta.delete()
+            val tmp = File(dir, "$modelId.notes.tmp")
+            val bytes = LlamaNative.saveTaskPrefix(tmp.absolutePath)
+            if (bytes <= 0 || !tmp.renameTo(file)) {
+                tmp.delete()
+                file.delete()
+                return 0
+            }
+            val json = File(dir, "$modelId.notes.json.tmp")
+            json.writeText(JSONObject().put("key", key).put("bytes", bytes).toString())
+            if (!json.renameTo(meta)) {
+                json.delete()
+                return 0
+            }
+            // Un seul modèle prend des notes : les consignes gardées des autres ne servent plus.
+            dir.listFiles()?.filter { !it.name.startsWith("$modelId.notes") }?.forEach { it.delete() }
+            bytes
+        } catch (e: Exception) {
+            Log.w(TAG, "consignes pas gardées", e)
+            0
+        }
     }
 
     suspend fun unload() = locked {
@@ -258,5 +369,8 @@ class LlamaEngine {
 
         /** Version de llama.cpp compilée dans l'app. */
         val buildRef: String by lazy { LlamaNative.buildRef() }
+
+        /** Change quand llama.cpp ou la façon de lire les consignes change : les consignes gardées sont alors relues. */
+        private val TASK_CACHE_FORMAT: String get() = "llama-$buildRef-notes-v1"
     }
 }

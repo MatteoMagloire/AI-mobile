@@ -143,12 +143,22 @@ private fun ResultCard(r: BrainTestResult) {
             seconds(r.averageMs),
             target = "en moyenne, après la réponse · la plus longue : ${seconds(r.maxMs)}",
         )
-        if (r.prefixTokens > 0) {
-            MetricRow(
+        // Les consignes : reprises du lancement précédent, lues (et gardées pour le prochain), ou déjà en mémoire.
+        when {
+            r.prefixRestoredTokens > 0 -> MetricRow(
+                "Lecture des consignes",
+                seconds(r.prefixRestoreMs + r.prefixMs),
+                target = "${r.prefixRestoredTokens} tokens repris du lancement précédent" +
+                    if (r.prefixTokens > 0) ", ${r.prefixTokens} lus car les consignes ont changé" else ", rien à relire",
+            )
+            r.prefixTokens > 0 -> MetricRow(
                 "Lecture des consignes",
                 seconds(r.prefixMs),
-                target = "${r.prefixTokens} tokens, une fois par chargement du modèle",
+                target = "${r.prefixTokens} tokens lus" +
+                    if (r.prefixSavedBytes > 0) ", puis gardés sur le téléphone (${megabytes(r.prefixSavedBytes)}) pour le prochain lancement"
+                    else ", une fois par chargement du modèle",
             )
+            else -> MetricRow("Lecture des consignes", seconds(0), target = "déjà en mémoire depuis le chargement du modèle")
         }
         if (r.notes.isNotEmpty()) {
             Text(

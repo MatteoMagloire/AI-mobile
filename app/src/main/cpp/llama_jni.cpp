@@ -91,8 +91,9 @@ llama_pos g_task_pos = 0;                  // prochaine position dans le context
 bool g_task_active = false;
 int g_task_error = 0;
 // Mesures du travail en cours : tokens et µs des consignes lues, des messages lus, des réponses
-// écrites, puis le nombre d'étapes.
-int64_t g_task_stats[7] = {};
+// écrites, le nombre d'étapes, puis les tokens des consignes déjà dans le KV (pas relus).
+constexpr int TASK_STATS = 8;
+int64_t g_task_stats[TASK_STATS] = {};
 // Seuls compteurs lus depuis un autre thread. Chaque interruption avance g_abort_epoch ; un travail
 // commencé à une époque antérieure s'arrête au plus vite, même au milieu d'un calcul.
 std::atomic<uint32_t> g_abort_epoch{0};
@@ -713,6 +714,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_beginTask(
     }
     g_task_stats[0] = (int64_t) (g_task_prefix.size() - keep);
     g_task_stats[1] = now_us() - t0;
+    g_task_stats[7] = (int64_t) keep;
     if (rc != 0) return g_task_error = rc;
     g_task_msgs = msgs;
     g_task_active = true;
@@ -814,13 +816,13 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_taskError(JNIEnv *, jobject) {
 }
 
 // Mesures du dernier travail : tokens des consignes lues et durée (µs), tokens des messages lus et
-// durée, tokens écrits et durée, nombre d'étapes.
+// durée, tokens écrits et durée, nombre d'étapes, tokens des consignes gardés sans les relire.
 JNIEXPORT jlongArray JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_taskStats(JNIEnv *env, jobject) {
-    jlongArray out = env->NewLongArray(7);
-    jlong values[7];
-    for (int i = 0; i < 7; i++) values[i] = (jlong) g_task_stats[i];
-    env->SetLongArrayRegion(out, 0, 7, values);
+    jlongArray out = env->NewLongArray(TASK_STATS);
+    jlong values[TASK_STATS];
+    for (int i = 0; i < TASK_STATS; i++) values[i] = (jlong) g_task_stats[i];
+    env->SetLongArrayRegion(out, 0, TASK_STATS, values);
     return out;
 }
 
@@ -838,6 +840,44 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_endTask(JNIEnv *, jobject) {
     }
     g_task_pos = (llama_pos) g_task_prefix.size();
     return 0;
+}
+
+// Écrit les consignes gardées (leur KV et leurs tokens) dans [path], pour les recharger au
+// prochain lancement au lieu de les relire. Seulement quand rien ne les suit dans le contexte de
+// travail. Taille écrite, 0 si rien n'a été écrit.
+JNIEXPORT jlong JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_saveTaskPrefix(JNIEnv *env, jobject, jstring jpath) {
+    if (!g_task_ctx || g_task_prefix.empty() || g_task_pos != (llama_pos) g_task_prefix.size()) return 0;
+    const std::string path = to_string(env, jpath);
+    return (jlong) llama_state_seq_save_file(g_task_ctx, path.c_str(), 0, g_task_prefix.data(), g_task_prefix.size());
+}
+
+// Recharge des consignes écrites par saveTaskPrefix ([expected_bytes] : la taille écrite). Les
+// tokens servent ensuite comme s'ils venaient d'être lus : beginTask n'en relit que ce qui a changé.
+// Nombre de tokens rechargés ; -1 : fichier inutilisable, le contexte de travail est alors vide ;
+// -2 : pas maintenant (travail en cours, ou pas de contexte de travail).
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_restoreTaskPrefix(
+        JNIEnv *env, jobject, jstring jpath, jlong expected_bytes) {
+    if (g_task_active || !ensure_task_context()) return -2;
+    task_reset();
+    const std::string path = to_string(env, jpath);
+
+    // llama.cpp s'arrête net (assert) sur un fichier tronqué : on vérifie la taille avant.
+    struct stat st {};
+    if (stat(path.c_str(), &st) != 0 || (jlong) st.st_size != expected_bytes) return -1;
+
+    llama_tokens tokens(TASK_CTX - TASK_MIN_ROOM);
+    size_t n = 0;
+    if (llama_state_seq_load_file(g_task_ctx, path.c_str(), 0, tokens.data(), tokens.size(), &n) == 0 || n == 0 ||
+        llama_memory_seq_pos_max(llama_get_memory(g_task_ctx), 0) + 1 != (llama_pos) n) {
+        task_reset();
+        return -1;
+    }
+    tokens.resize(n);
+    g_task_prefix = std::move(tokens);
+    g_task_pos = (llama_pos) n;
+    return (jint) n;
 }
 
 // Seule fonction appelable depuis n'importe quel thread, à tout moment : le travail en cours (ou

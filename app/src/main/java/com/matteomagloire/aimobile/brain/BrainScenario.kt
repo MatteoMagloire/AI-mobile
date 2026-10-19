@@ -40,6 +40,11 @@ data class BrainTestResult(
     /** Consignes et exemples de la prise de notes, lus une fois avant le premier message. */
     val prefixTokens: Int = 0,
     val prefixMs: Long = 0,
+    /** Consignes reprises du lancement précédent au lieu d'être lues. */
+    val prefixRestoredTokens: Int = 0,
+    val prefixRestoreMs: Long = 0,
+    /** Taille du fichier où les consignes lues ont été gardées pour le prochain lancement (0 : pas gardées). */
+    val prefixSavedBytes: Long = 0,
 ) {
     val expected: Int get() = rows.sumOf { it.expected }
     val found: Int get() = rows.sumOf { it.found }
