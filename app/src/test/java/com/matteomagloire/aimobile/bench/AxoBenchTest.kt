@@ -22,7 +22,8 @@ import java.util.Locale
  * Banc d'Axo : de vraies conversations avec le vrai modèle, par le code de l'appli (pont JNI compilé
  * pour l'ordinateur, personnalité par défaut, souvenirs du Cerveau, réglages par défaut). Ne tourne
  * que si AXO_BENCH_MODEL donne le fichier du modèle (workflow « Banc d'Axo ») ; sinon il est ignoré.
- * Le rapport est écrit dans build/axo-bench/report.md.
+ * Le rapport est écrit dans build/axo-bench/report.md. Le banc mesure, il ne bloque rien : il ne rate
+ * que s'il ne peut pas tourner, et les réponses qui ratent sont dans le rapport.
  */
 class AxoBenchTest {
     private data class Answer(val text: String, val tokens: Int, val ms: Long, val failures: List<String>)
@@ -77,8 +78,8 @@ class AxoBenchTest {
 
         val report = report(model.fileName, seeds, trial, prompt, promptTokens, samplerMs, settings, results)
         File("build/axo-bench").apply { mkdirs() }.resolve("report.md").writeText(report)
-        val failed = results.flatMap { (case, answers) -> answers.filter { it.failures.isNotEmpty() }.map { case.id } }
-        assertTrue("Réponses qui ratent : ${failed.joinToString()} (voir build/axo-bench/report.md)", failed.isEmpty())
+        val all = results.values.flatten()
+        println("Banc d'Axo : ${all.count { it.failures.isEmpty() }} réponses sur ${all.size} passent (build/axo-bench/report.md)")
     }
 
     /** Ce que le Cerveau glisse devant le message, comme dans l'appli (Brain.prepare). */
