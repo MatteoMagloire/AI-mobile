@@ -152,6 +152,12 @@ object Recall {
     /** Le message demande son prénom (« tu sais comment je m'appelle ? »). */
     fun asksName(message: String): Boolean = NAME.containsMatchIn(TextMatch.fold(message))
 
+    // « tu c'est comment je m'appelle » se lisait « c'est comment ? » : « Matteo, c'est un peu comme un ami virtuel ».
+    private val TU_CEST = Regex("\\btu c'?est\\b")
+
+    /** Le message écrit « tu sais » comme « tu c'est ». */
+    fun writesTuCest(message: String): Boolean = TU_CEST.containsMatchIn(TextMatch.fold(message).replace('’', '\''))
+
     /**
      * Ce qu'Axo relit sur lui avant [message] : s'il parle de lui, son prénom (aucune note ne le dit,
      * Axo le sait toujours) puis les derniers faits de « Moi », aussi relus si [always]. S'il demande
@@ -174,7 +180,8 @@ object Recall {
      * Ce que le modèle lit avant le message. Vide s'il n'y a rien à dire : le message est lu tel quel.
      * [forgotten] : faits qu'il vient d'oublier à la demande de l'utilisateur ; [nothingToForget] : la
      * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message ;
-     * [distress] : il va peut-être très mal ([Distress]).
+     * [distress] : il va peut-être très mal ([Distress]) ; [tuCest] : il a écrit « tu c'est » pour
+     * « tu sais » ([writesTuCest]).
      */
     fun block(
         facts: List<String>,
@@ -182,9 +189,10 @@ object Recall {
         nothingToForget: Boolean = false,
         remember: Boolean = false,
         distress: Boolean = false,
+        tuCest: Boolean = false,
         name: String = USER_NAME,
     ): String {
-        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && !distress) return ""
+        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && !distress && !tuCest) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
@@ -200,7 +208,7 @@ object Recall {
                 append("[Pour Axo : il va peut-être très mal. Prends-le au sérieux, dis-lui que tu es là pour lui, ")
                 append("et qu'il peut appeler le 3114 (gratuit, jour et nuit) ou parler tout de suite à un proche]\n")
             }
-            append("[Message de $name]\n")
+            append(if (tuCest) "[Message de $name, où « tu c'est » veut dire « tu sais »]\n" else "[Message de $name]\n")
         }
     }
 }

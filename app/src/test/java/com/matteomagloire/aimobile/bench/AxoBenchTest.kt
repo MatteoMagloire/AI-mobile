@@ -87,7 +87,12 @@ class AxoBenchTest {
     private fun memoryFor(case: BenchCase): String {
         val given = Recall.alreadyGiven(emptyList())
         val r = Recall.recollect(case.notes, case.message, given, case.startOfSession, dormant = emptySet())
-        return Recall.block(r.facts, remember = BrainCommands.parse(case.message) is BrainCommand.Remember, distress = Distress.inMessage(case.message))
+        return Recall.block(
+            r.facts,
+            remember = BrainCommands.parse(case.message) is BrainCommand.Remember,
+            distress = Distress.inMessage(case.message),
+            tuCest = Recall.writesTuCest(case.message),
+        )
     }
 
     private fun history(case: BenchCase): List<ChatMessage> =
