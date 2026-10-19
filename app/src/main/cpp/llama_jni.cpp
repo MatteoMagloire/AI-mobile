@@ -8,14 +8,12 @@
 
 #include <algorithm>
 #include <chrono>
-#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "chat.h"
 #include "common.h"
-#include "ggml-cpu.h"
 #include "llama.h"
 #include "sampling.h"
 
@@ -49,7 +47,6 @@ llama_context *g_context = nullptr;
 common_batch g_batch;
 common_chat_templates_ptr g_chat_templates;
 common_sampler *g_sampler = nullptr;
-ggml_threadpool *g_threadpool = nullptr;
 int g_n_ctx = 4096;
 bool g_use_jinja = true;
 
@@ -76,51 +73,6 @@ int64_t g_stat_gen_us = 0;
 int64_t now_us() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
-}
-
-// Fréquence max d'un cœur en kHz, 0 si illisible.
-long cpu_max_freq(int cpu) {
-    std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/cpufreq/cpuinfo_max_freq");
-    long khz = 0;
-    return (f >> khz) ? khz : 0;
-}
-
-// Threads de calcul gardés d'un mot à l'autre et réservés aux cœurs rapides : sans réserve,
-// ggml recrée ses threads à chaque calcul, et Android peut les démarrer sur les petits cœurs.
-// Sur le Snapdragon 888 : les cœurs 4 à 7 (Cortex-A78 et X1), pas les Cortex-A55.
-void attach_threadpool(int n_threads) {
-    if (!g_context) return;
-    llama_detach_threadpool(g_context);
-    if (g_threadpool) {
-        ggml_threadpool_free(g_threadpool);
-        g_threadpool = nullptr;
-    }
-
-    ggml_threadpool_params tpp = ggml_threadpool_params_default(n_threads);
-    const int n_cpus = std::min((int) sysconf(_SC_NPROCESSORS_CONF), GGML_MAX_N_THREADS);
-    std::vector<long> freqs(std::max(n_cpus, 0));
-    for (int i = 0; i < n_cpus; i++) freqs[i] = cpu_max_freq(i);
-    const auto [lo, hi] = std::minmax_element(freqs.begin(), freqs.end());
-    if (lo != freqs.end() && *lo > 0 && *hi > *lo) {
-        int fast = 0;
-        for (int i = 0; i < n_cpus; i++) {
-            tpp.cpumask[i] = freqs[i] > *lo;
-            fast += tpp.cpumask[i];
-        }
-        // Moins de cœurs rapides que de threads : on laisse Android choisir.
-        if (fast < n_threads) std::fill(tpp.cpumask, tpp.cpumask + GGML_MAX_N_THREADS, false);
-        else LOGI("threads sur %d cœurs rapides", fast);
-    }
-
-    g_threadpool = ggml_threadpool_new(&tpp);
-    if (g_threadpool) llama_attach_threadpool(g_context, g_threadpool, nullptr);
-    llama_set_n_threads(g_context, n_threads, n_threads);
-}
-
-void free_threadpool() {
-    if (g_context) llama_detach_threadpool(g_context);
-    if (g_threadpool) ggml_threadpool_free(g_threadpool);
-    g_threadpool = nullptr;
 }
 
 void android_log_callback(ggml_log_level level, const char *text, void *) {
@@ -298,7 +250,6 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_load(
 
     g_model = model;
     g_context = ctx;
-    attach_threadpool(n_threads);
     g_batch = common_batch(ctx);
     g_chat_templates = common_chat_templates_init(g_model, "");
     g_use_jinja = true;
@@ -556,7 +507,6 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
     free_sampler();
     g_chat_templates.reset();
     g_batch = common_batch();
-    free_threadpool();
     if (g_context) llama_free(g_context);
     if (g_model) llama_model_free(g_model);
     g_context = nullptr;
@@ -566,7 +516,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
 // Nombre de cœurs utilisés, changé sans recharger le modèle.
 JNIEXPORT void JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_setThreads(JNIEnv *, jobject, jint n_threads) {
-    attach_threadpool(n_threads);
+    if (g_context) llama_set_n_threads(g_context, n_threads, n_threads);
 }
 
 JNIEXPORT jstring JNICALL
