@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -31,7 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.matteomagloire.aimobile.ui.theme.Axo
@@ -166,6 +169,37 @@ fun EntryRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> 
         }
         Icon(AxoIcons.Chevron, contentDescription = null, tint = Axo.Faint, modifier = Modifier.size(18.dp))
     }
+}
+
+/** Champ de saisie de la DA : fond sombre, bordure fine, curseur ambre. */
+@Composable
+fun AxoTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    singleLine: Boolean = false,
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    background: Color = Axo.Ink,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = singleLine,
+        textStyle = textStyle.copy(color = Axo.Linen),
+        cursorBrush = SolidColor(Axo.Amber),
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(background)
+            .border(BorderStroke(1.dp, Axo.Line), RoundedCornerShape(14.dp))
+            .padding(12.dp),
+        decorationBox = { field ->
+            Box {
+                if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = textStyle, color = Axo.Faint)
+                field()
+            }
+        },
+    )
 }
 
 @Composable

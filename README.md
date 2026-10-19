@@ -9,11 +9,12 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
   - **Reasoning** en mode « Réflexion » (réfléchit avant de répondre)
 - Mises à jour de l'app via **GitHub Releases**
 
-## Ce que fait la version actuelle (v0.2)
+## Ce que fait la version actuelle (v0.3)
 - Télécharge le modèle au premier lancement (environ 2,1 Go, une seule fois, Wi-Fi par défaut, avec reprise).
 - Une seule conversation qui continue : elle est gardée sur le téléphone et reprend au redémarrage. Bouton Stop, et « Effacer la conversation » dans les réglages.
 - **Reprise instantanée** : la mémoire de travail du modèle (cache KV) est enregistrée quand l'app passe en arrière-plan, puis rechargée au retour. Le prompt système est aussi mis en cache, pour ne pas le relire à chaque ouverture.
 - Bouton « Réflexion » : bascule sur le modèle Reasoning ; sa réflexion est repliée au-dessus de la réponse.
+- **Cerveau** (prototype) : après chaque réponse, en tâche de fond, le modèle Instruct note ce qui dure sur l'utilisateur dans des notes Markdown (`filesDir/brain/notes/*.md`, la note « Moi » d'abord). Les étapes sont courtes et à format imposé (grammaire GBNF), ajoutées à la fin du contexte puis retirées : la conversation reste intacte, et un message envoyé interrompt la prise de notes. « Retiens que… » et « Oublie… » sont compris. Avant chaque message, les faits proches (recherche par mots) sont glissés devant pour le modèle seulement. Écran Cerveau : recherche, étiquettes, journal avec « Annuler », lecture mise au propre ou brute, correction à la main. **Test du Cerveau** (Réglages > Mesures) : 10 messages écrits d'avance, faits retenus, notés pour rien et durée.
 - **Test de vitesse** (Réglages > Mesures) : premier mot, vitesse d'écriture, lecture d'un long message, mémoire utilisée et chauffe, avec les cibles du cahier des charges. Un test d'endurance de 10 minutes compare la vitesse de la fin à celle du début.
 - **Comparer les fichiers** (Réglages > Mesures) : Q4_K_M, UD-Q4_K_XL et Q4_0 répondent aux 10 mêmes questions, puis tu votes à l'aveugle. L'app recommande le meilleur fichier et peut l'utiliser tout de suite.
 - Réglages : créativité, longueur max, personnalité d'Axo (prompt système), affichage de la vitesse, Wi-Fi uniquement.
@@ -26,6 +27,7 @@ Ton **ami virtuel** qui vit dans ton téléphone et fonctionne **hors ligne** (S
 | `app/src/main/cpp/` | Pont JNI vers llama.cpp (version figée dans `CMakeLists.txt`), sauvegarde et reprise du cache KV |
 | `.../llm/` | Moteur local : chargement, streaming, séparation de la réflexion, cache des sessions (`SessionCache`) |
 | `.../chat/` | Conversation enregistrée et fenêtre d'historique envoyée au modèle |
+| `.../brain/` | Cerveau : notes Markdown, prise de notes en tâche de fond, souvenirs, « retiens / oublie », journal |
 | `.../measure/` | Test de vitesse, endurance, comparaison à l'aveugle, mesures mémoire et chauffe |
 | `.../model/` | Catalogue des modèles (3 fichiers par modèle) et téléchargement en arrière-plan |
 | `.../update/` | Vérification, téléchargement, vérification SHA-256 et installation des mises à jour |

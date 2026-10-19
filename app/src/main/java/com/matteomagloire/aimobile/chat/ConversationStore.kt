@@ -21,7 +21,12 @@ data class ChatMessage(
     /** Temps avant le premier mot, et vitesse d'écriture de la réponse. */
     val firstWordMs: Long = 0,
     val tokensPerSecond: Float = 0f,
-)
+    /** Souvenirs du Cerveau lus par le modèle juste avant ce message (invisibles dans la bulle). */
+    val memory: String = "",
+) {
+    /** Le message tel que le modèle l'a lu. */
+    val modelText: String get() = memory + text
+}
 
 /** L'unique conversation, gardée sur le téléphone pour reprendre là où on s'était arrêté. */
 class ConversationStore(context: Context) {
@@ -44,6 +49,7 @@ class ConversationStore(context: Context) {
                     thinkingMs = o.optLong("thinkingMs"),
                     firstWordMs = o.optLong("firstWordMs"),
                     tokensPerSecond = o.optDouble("tps", 0.0).toFloat(),
+                    memory = o.optString("memory"),
                 )
             }
         } catch (e: Exception) {
@@ -65,6 +71,7 @@ class ConversationStore(context: Context) {
                             if (m.thinkingMs > 0) put("thinkingMs", m.thinkingMs)
                             if (m.firstWordMs > 0) put("firstWordMs", m.firstWordMs)
                             if (m.tokensPerSecond > 0) put("tps", m.tokensPerSecond.toDouble())
+                            if (m.memory.isNotEmpty()) put("memory", m.memory)
                         },
                 )
             }
@@ -93,8 +100,9 @@ object HistoryWindow {
     const val DEFAULT_BUDGET_CHARS = 7_000
 
     /**
-     * La conversation telle que le modèle la voit : chaque message de l'utilisateur est suivi d'une
-     * réponse (vide si elle a été arrêtée avant le premier mot), comme l'exige le template de chat.
+     * La conversation telle que le modèle la voit (souvenirs du Cerveau compris) : chaque message de
+     * l'utilisateur est suivi d'une réponse (vide si elle a été arrêtée avant le premier mot), comme
+     * l'exige le template de chat.
      */
     fun turns(messages: List<ChatMessage>): List<Turn> {
         val out = ArrayList<Turn>(messages.size + 1)
@@ -103,7 +111,7 @@ object HistoryWindow {
             val last = out.lastOrNull()
             if (m.fromUser && last != null && last.first) out.add(false to "")
             if (!m.fromUser && (last == null || !last.first)) continue
-            out.add(m.fromUser to m.text)
+            out.add(m.fromUser to m.modelText)
         }
         if (out.lastOrNull()?.first == true) out.add(false to "")
         return out

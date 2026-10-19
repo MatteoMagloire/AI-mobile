@@ -10,20 +10,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.matteomagloire.aimobile.model.ModelCatalog
 
-private enum class Screen { CHAT, SETTINGS, SPEED, BENCH }
+private enum class Screen { CHAT, SETTINGS, SPEED, BENCH, BRAIN, NOTE, BRAIN_TEST }
 
 @Composable
 fun AppRoot(vm: ChatViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.CHAT) }
+    // La note ouverte, et l'écran où revenir : le Cerveau, ou la conversation (« Voir »).
+    var noteId by rememberSaveable { mutableStateOf("") }
+    var noteBack by rememberSaveable { mutableStateOf(Screen.BRAIN) }
+
+    fun openNote(id: String, from: Screen) {
+        noteId = id
+        noteBack = from
+        vm.openNote(id)
+        screen = Screen.NOTE
+    }
 
     // Quitter un écran de mesure arrête la mesure en cours : la conversation reprend.
     fun back() {
         screen = when (screen) {
-            Screen.SPEED, Screen.BENCH -> {
+            Screen.SPEED, Screen.BENCH, Screen.BRAIN_TEST -> {
                 vm.stopMeasure()
                 Screen.SETTINGS
             }
+            Screen.NOTE -> noteBack
             else -> Screen.CHAT
         }
     }
@@ -40,6 +51,8 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             onClearConversation = vm::clearConversation,
             onOpenSpeedTest = { screen = Screen.SPEED },
             onOpenBench = { screen = Screen.BENCH },
+            onOpenBrainTest = { screen = Screen.BRAIN_TEST },
+            onClearBrain = vm::clearBrain,
             onBack = { back() },
         )
         Screen.SPEED -> SpeedTestScreen(
@@ -66,6 +79,26 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
             onDismissError = vm::dismissMeasureError,
             onBack = { back() },
         )
+        Screen.BRAIN -> BrainScreen(
+            state = state,
+            onOpenNote = { openNote(it, Screen.BRAIN) },
+            onUndo = vm::undoNotes,
+            onBack = { back() },
+        )
+        Screen.NOTE -> NoteScreen(
+            note = state.brain.notes.firstOrNull { it.id == noteId },
+            onEditFact = { old, text, before -> vm.editFact(noteId, old, text, before) },
+            onSaveRaw = { vm.rewriteNote(noteId, it) },
+            onDeleteNote = { vm.deleteNote(noteId) },
+            onBack = { back() },
+        )
+        Screen.BRAIN_TEST -> BrainTestScreen(
+            state = state,
+            onRun = vm::startBrainTest,
+            onStop = vm::stopMeasure,
+            onDismissError = vm::dismissMeasureError,
+            onBack = { back() },
+        )
         Screen.CHAT -> if (!state.modelDownloaded) {
             SetupScreen(
                 model = state.activeModel,
@@ -82,6 +115,10 @@ fun AppRoot(vm: ChatViewModel = viewModel()) {
                 onStop = vm::stop,
                 onReasoningChange = vm::setReasoningMode,
                 onOpenSettings = { screen = Screen.SETTINGS },
+                onOpenBrain = { screen = Screen.BRAIN },
+                onOpenNote = { openNote(it, Screen.CHAT) },
+                onUndoBrain = vm::undoBrainChip,
+                onDismissBrain = vm::dismissBrainChip,
                 onDismissError = vm::dismissError,
                 onDismissNotice = vm::dismissNotice,
             )

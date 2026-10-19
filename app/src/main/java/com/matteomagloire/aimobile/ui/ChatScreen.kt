@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.matteomagloire.aimobile.chat.ChatMessage
@@ -73,6 +74,10 @@ fun ChatScreen(
     onStop: () -> Unit,
     onReasoningChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenBrain: () -> Unit,
+    onOpenNote: (String) -> Unit,
+    onUndoBrain: () -> Unit,
+    onDismissBrain: () -> Unit,
     onDismissError: () -> Unit,
     onDismissNotice: () -> Unit,
 ) {
@@ -87,7 +92,7 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Axo.Ink).statusBarsPadding().navigationBarsPadding().imePadding()) {
-        ChatHeader(state, waking, onOpenSettings)
+        ChatHeader(state, waking, onOpenSettings, onOpenBrain)
         if (waking) AmberProgress(null)
 
         (state.engine as? LlamaEngine.State.Failed)?.let { Banner(it.message, Axo.Blush) }
@@ -129,6 +134,18 @@ fun ChatScreen(
             }
         }
 
+        state.brain.chip?.let { chip ->
+            BrainChipBar(
+                chip = chip,
+                onView = {
+                    val id = (chip as? BrainChip.Noted)?.entry?.noted?.firstOrNull()?.noteId
+                    if (id != null) onOpenNote(id) else onOpenBrain()
+                },
+                onUndo = onUndoBrain,
+                onDismiss = onDismissBrain,
+            )
+        }
+
         InputBar(
             input = input,
             onInput = { input = it },
@@ -143,7 +160,7 @@ fun ChatScreen(
 }
 
 @Composable
-private fun ChatHeader(state: ChatUiState, waking: Boolean, onOpenSettings: () -> Unit) {
+private fun ChatHeader(state: ChatUiState, waking: Boolean, onOpenSettings: () -> Unit, onOpenBrain: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -163,10 +180,14 @@ private fun ChatHeader(state: ChatUiState, waking: Boolean, onOpenSettings: () -
                 waking -> "Se réveille…"
                 state.generating && state.messages.lastOrNull()?.isThinking == true -> "Réfléchit…"
                 state.generating -> "Écrit…"
+                state.brain.noting -> "Prend des notes…"
                 state.settings.reasoningMode -> "Mode réflexion · hors ligne"
                 else -> "Hors ligne · sur ton téléphone"
             }
             Text(status, style = MaterialTheme.typography.bodySmall, color = Axo.Muted)
+        }
+        IconButton(onClick = onOpenBrain) {
+            Icon(AxoIcons.Brain, contentDescription = "Cerveau", tint = if (state.brain.noting) Axo.Amber else Axo.TextSecondary)
         }
         IconButton(onClick = onOpenSettings) {
             Icon(AxoIcons.Settings, contentDescription = "Réglages", tint = Axo.TextSecondary)
@@ -244,7 +265,7 @@ private fun dayLabel(day: LocalDate, today: LocalDate): String = when (day) {
 @Composable
 private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: Boolean) {
     if (message.fromUser) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 message.text,
                 style = MaterialTheme.typography.bodyLarge,
@@ -254,6 +275,7 @@ private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: B
                     .background(Axo.Slate)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             )
+            if (message.memory.isNotEmpty()) MemoryLine(message.memory)
         }
         return
     }
@@ -299,6 +321,80 @@ private fun MessageBubble(message: ChatMessage, streaming: Boolean, showSpeed: B
                 color = Axo.Muted,
                 modifier = Modifier.padding(start = 4.dp),
             )
+        }
+    }
+}
+
+/** Sous un message : les souvenirs qu'Axo a relus avant de répondre (repliés). */
+@Composable
+private fun MemoryLine(memory: String) {
+    val facts = remember(memory) { memory.lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ") } }
+    if (facts.isEmpty()) return
+    var open by rememberSaveable { mutableStateOf(false) }
+    val forgot = memory.contains("tu viens d'oublier")
+    val label = when {
+        forgot -> "Oublié à ta demande"
+        facts.size == 1 -> "1 souvenir relu par Axo"
+        else -> "${facts.size} souvenirs relus par Axo"
+    }
+    Column(
+        Modifier
+            .widthIn(max = 300.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { open = !open }
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(AxoIcons.Brain, contentDescription = null, tint = Axo.Frost, modifier = Modifier.size(12.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Axo.Frost)
+        }
+        if (open) {
+            facts.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = Axo.Muted) }
+        }
+    }
+}
+
+/** Dernière action du Cerveau, au-dessus du champ de saisie : « Voir », « Annuler ». */
+@Composable
+private fun BrainChipBar(chip: BrainChip, onView: () -> Unit, onUndo: () -> Unit, onDismiss: () -> Unit) {
+    val title: String
+    val detail: String
+    var canUndo = true
+    when (chip) {
+        is BrainChip.Noted -> {
+            title = "Noté dans le Cerveau · " + chip.entry.noted.map { it.noteTitle }.distinct().joinToString(", ")
+            detail = chip.entry.noted.joinToString("  ·  ") { it.text }
+        }
+        is BrainChip.Forgot -> {
+            canUndo = !chip.forgetting.isEmpty
+            title = if (canUndo) "Oublié" else "Rien à oublier : Axo n'avait rien noté là-dessus"
+            detail = chip.forgetting.texts.joinToString("  ·  ")
+        }
+    }
+    Row(
+        Modifier
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Axo.Card)
+            .border(BorderStroke(1.dp, Axo.AmberBorder), RoundedCornerShape(14.dp))
+            .padding(start = 12.dp, end = 2.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(AxoIcons.Brain, contentDescription = null, tint = Axo.Amber, modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = Axo.Amber, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (detail.isNotEmpty()) {
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = Axo.TextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (chip is BrainChip.Noted) AxoTextButton("Voir", onClick = onView)
+        if (canUndo) AxoTextButton("Annuler", onClick = onUndo, color = Axo.TextSecondary)
+        IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+            Icon(AxoIcons.Close, contentDescription = "Fermer", tint = Axo.Faint, modifier = Modifier.size(16.dp))
         }
     }
 }

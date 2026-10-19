@@ -6,6 +6,22 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.matteomagloire.aimobile.AiMobileApp
+import com.matteomagloire.aimobile.brain.Brain
+import com.matteomagloire.aimobile.brain.BrainScenario
+import com.matteomagloire.aimobile.brain.BrainTestResult
+import com.matteomagloire.aimobile.brain.BrainTestRow
+import com.matteomagloire.aimobile.brain.Exchange
+import com.matteomagloire.aimobile.brain.Fact
+import com.matteomagloire.aimobile.brain.Forgetting
+import com.matteomagloire.aimobile.brain.JournalEntry
+import com.matteomagloire.aimobile.brain.ModelAccess
+import com.matteomagloire.aimobile.brain.Note
+import com.matteomagloire.aimobile.brain.NoteStore
+import com.matteomagloire.aimobile.brain.NoteTaker
+import com.matteomagloire.aimobile.brain.Reading
+import com.matteomagloire.aimobile.brain.Recall
+import com.matteomagloire.aimobile.brain.TaskRunner
+import com.matteomagloire.aimobile.brain.TextMatch
 import com.matteomagloire.aimobile.chat.ChatMessage
 import com.matteomagloire.aimobile.chat.HistoryWindow
 import com.matteomagloire.aimobile.llm.LlamaEngine
@@ -46,6 +62,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Téléchargement d'un modèle : null = pas en cours. */
 data class DownloadState(val percent: Int, val waitingForNetwork: Boolean)
@@ -58,7 +75,7 @@ sealed interface UpdateUi {
     data class Failed(val info: UpdateInfo, val message: String) : UpdateUi
 }
 
-enum class MeasureKind { SPEED, ENDURANCE, BENCH }
+enum class MeasureKind { SPEED, ENDURANCE, BENCH, BRAIN }
 
 /** Test de vitesse, endurance et comparaison des fichiers. */
 data class MeasureUi(
@@ -72,10 +89,27 @@ data class MeasureUi(
     val enduranceLive: List<EndurancePoint> = emptyList(),
     val benchInstruct: BenchState = BenchState(reasoning = false),
     val benchReasoning: BenchState = BenchState(reasoning = true),
+    /** Test du Cerveau : les échanges déjà lus pendant l'essai, puis le résultat. */
+    val brainLive: List<BrainTestRow> = emptyList(),
+    val brain: BrainTestResult? = null,
     val error: String? = null,
 ) {
     fun bench(reasoning: Boolean) = if (reasoning) benchReasoning else benchInstruct
 }
+
+/** Dernière action du Cerveau montrée sous la conversation, avec « Annuler ». */
+sealed interface BrainChip {
+    data class Noted(val entry: JournalEntry) : BrainChip
+    data class Forgot(val forgetting: Forgetting) : BrainChip
+}
+
+data class BrainUi(
+    val notes: List<Note> = emptyList(),
+    val journal: List<JournalEntry> = emptyList(),
+    /** Axo prend des notes en ce moment. */
+    val noting: Boolean = false,
+    val chip: BrainChip? = null,
+)
 
 data class ChatUiState(
     val settings: Settings = Settings(),
@@ -98,6 +132,7 @@ data class ChatUiState(
     val measure: MeasureUi = MeasureUi(),
     /** Version de llama.cpp, cœurs, contexte : affiché dans les réglages et le test de vitesse. */
     val engineInfo: String = "",
+    val brain: BrainUi = BrainUi(),
 ) {
     val download: DownloadState? get() = downloads[activeModel.id]
     val reasoningModel: ModelInfo get() = ModelCatalog.byId(settings.reasoningModelId) ?: ModelCatalog.REASONING
@@ -111,6 +146,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = axo.engine
     private val sessions = axo.sessions
     private val conversation = axo.conversation
+    private val brain = axo.brain
     private val settingsRepo = SettingsRepository(app)
     private val store = ModelStore(app)
     private val measures = MeasureStore(app)
@@ -157,6 +193,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             settingsRepo.settings.map { it.threads }.distinctUntilChanged().collect { engine.setThreads(it) }
         }
         watchDownloads()
+        viewModelScope.launch { brain.store.notes.collect { n -> updateBrain { it.copy(notes = n) } } }
+        viewModelScope.launch { brain.store.journal.collect { j -> updateBrain { it.copy(journal = j) } } }
+        viewModelScope.launch { brain.noting.collect { v -> updateBrain { it.copy(noting = v) } } }
+        viewModelScope.launch { brain.noted.collect { e -> updateBrain { it.copy(chip = BrainChip.Noted(e)) } } }
+        // Conversation perdue pendant une prise de notes (très rare) : on la reprend.
+        viewModelScope.launch { brain.contextLost.collect { openChat() } }
         viewModelScope.launch(Dispatchers.IO) {
             // Charge la bibliothèque native hors du fil de l'interface.
             val info = try {
@@ -198,6 +240,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private fun refreshDownloaded() = _state.update { it.copy(downloaded = downloadedIds()) }
 
     private fun selectModel(model: ModelInfo) {
+        brain.interrupt()
         generation?.cancel()
         _state.update { it.copy(activeModel = model, modelDownloaded = store.isDownloaded(model)) }
         if (store.isDownloaded(model)) openChat()
@@ -242,6 +285,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // Le modèle a pu changer pendant la reprise (bouton Réflexion) : la suivante prend le relais.
                 if (resumed && engine.loadedModelId() == _state.value.activeModel.id) {
                     _state.update { it.copy(conversationReady = true) }
+                    // Les échanges pas encore lus (app fermée pendant une prise de notes, mode Réflexion).
+                    brain.takeNotes(_state.value.messages)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -263,17 +308,36 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val message = text.trim()
         val s = _state.value
         if (message.isEmpty() || s.generating || !s.conversationReady || measure?.isActive == true) return
+        // La prise de notes s'efface devant la réponse : elle reprendra après.
+        brain.interrupt()
         val now = System.currentTimeMillis()
+        val userIndex = s.messages.size
+        val startOfSession = now - (s.messages.lastOrNull()?.time ?: 0L) > Brain.SESSION_GAP_MS
+        val recentMemories = s.messages.filter { it.fromUser }.takeLast(10).map { it.memory }
         _state.update {
             it.copy(
                 messages = it.messages + ChatMessage(fromUser = true, text = message, time = now) +
                     ChatMessage(fromUser = false, text = "", time = now),
                 generating = true,
                 error = null,
+                brain = it.brain.copy(chip = null),
             )
         }
-        saveConversation()
         generation = viewModelScope.launch {
+            // Souvenirs et « oublie… » : quelques millisecondes, sans le modèle.
+            val prepared = try {
+                brain.prepare(message, now, recentMemories, startOfSession)
+            } catch (e: Exception) {
+                Brain.Prepared("")
+            }
+            if (prepared.memory.isNotEmpty()) {
+                _state.update { st ->
+                    val m = st.messages.getOrNull(userIndex) ?: return@update st
+                    st.copy(messages = st.messages.toMutableList().apply { set(userIndex, m.copy(memory = prepared.memory)) })
+                }
+            }
+            prepared.forgetting?.let { f -> updateBrain { it.copy(chip = BrainChip.Forgot(f)) } }
+            saveConversation()
             val settings = _state.value.settings
             val raw = StringBuilder()
             val start = System.nanoTime()
@@ -285,7 +349,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 sessions.use {
                     try {
                         engine.configureSampler(settings.temperature, settings.topP)
-                        engine.generate(message, settings.maxTokens).collect { piece ->
+                        engine.generate(prepared.memory + message, settings.maxTokens).collect { piece ->
                             val t = System.nanoTime()
                             if (firstWordMs == 0L) firstWordMs = ((t - start) / 1_000_000).coerceAtLeast(1)
                             raw.append(piece)
@@ -326,7 +390,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 replaceLast { if (it.fromUser) it else it.copy(isThinking = false, thinkingMs = thinkingMs) }
                 _state.update { it.copy(generating = false) }
                 saveConversation()
-                if (failed) openChat()
+                // Même arrêtée, la réponse laisse un échange à lire pour le Cerveau.
+                if (failed) openChat() else brain.takeNotes(_state.value.messages)
             }
         }
     }
@@ -344,6 +409,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Efface toute la conversation (demandé depuis les réglages, avec confirmation). */
     fun clearConversation() {
+        brain.interrupt()
         generation?.cancel()
         viewModelScope.launch {
             generation?.join()
@@ -464,6 +530,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun runMeasure(kind: MeasureKind, block: suspend SessionCache.Session.() -> Unit) {
         if (measure?.isActive == true || _state.value.generating) return
+        brain.interrupt()
         updateMeasure { it.copy(running = kind, step = "Préparation…", progress = null, error = null) }
         _state.update { it.copy(conversationReady = false) }
         measure = viewModelScope.launch {
@@ -491,7 +558,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopMeasure() {
+        if (measure?.isActive != true) return
         measure?.cancel()
+        // Test du Cerveau : la prise de notes en cours s'arrête tout de suite.
+        engine.abortTask()
     }
 
     private suspend fun ensureLoaded(model: ModelInfo): Long {
@@ -659,6 +729,120 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissMeasureError() = updateMeasure { it.copy(error = null) }
+
+    /**
+     * Test du Cerveau : une petite conversation écrite d'avance, lue comme une vraie, dans un Cerveau
+     * à part (le vrai n'est pas touché). On compte ce qui est retenu, ce qui est noté pour rien, le
+     * déménagement, les souvenirs retrouvés et le temps de chaque prise de notes.
+     */
+    fun startBrainTest() {
+        val model = ModelCatalog.byId(_state.value.settings.instructModelId) ?: ModelCatalog.INSTRUCT
+        if (!store.isDownloaded(model)) return
+        val dir = File(getApplication<Application>().cacheDir, "brain-test")
+        runMeasure(MeasureKind.BRAIN) {
+            updateMeasure { it.copy(brainLive = emptyList()) }
+            step("Chargement du modèle…")
+            ensureLoaded(model)
+            engine.startConversation(_state.value.settings.systemPrompt)
+            val notes = NoteStore(dir)
+            notes.clear()
+            val t0 = System.currentTimeMillis()
+            val runner = object : TaskRunner {
+                override suspend fun begin(reserve: Int) = engine.beginTask(reserve)
+                override suspend fun step(prompt: String, grammar: String, maxTokens: Int) = engine.taskStep(prompt, grammar, maxTokens)
+                override suspend fun end() {
+                    check(engine.endTask()) { "La conversation du test n'a pas pu être remise en état" }
+                }
+            }
+            val access = object : ModelAccess {
+                override suspend fun <T> withModel(block: suspend (TaskRunner) -> T): T? = block(runner)
+            }
+            val taker = NoteTaker()
+            val exchanges = BrainScenario.exchanges
+            val rows = ArrayList<BrainTestRow>()
+            var previousReply = ""
+            for ((i, ex) in exchanges.withIndex()) {
+                step("Échange ${i + 1} sur ${exchanges.size}", i.toFloat() / (exchanges.size + 1))
+                engine.replay(listOf(true to ex.message, false to ex.reply))
+                val start = System.nanoTime()
+                val reading = taker.read(Exchange(t0 + i + 1, ex.message, previousReply), notes, access)
+                val ms = (System.nanoTime() - start) / 1_000_000
+                rows += BrainScenario.score(ex, (reading as? Reading.Done)?.entry, ms)
+                previousReply = ex.reply
+                updateMeasure { it.copy(brainLive = rows.toList()) }
+            }
+            step("Souvenirs…", exchanges.size.toFloat() / (exchanges.size + 1))
+            val final = notes.notes.value
+            val start = System.nanoTime()
+            val recalled = BrainScenario.recallChecks.count { check ->
+                val facts = Recall.search(final, check.question).map { it.fact.text } +
+                    (if (Recall.asksAboutMe(check.question)) Recall.aboutMe(final, 4).map { it.text } else emptyList())
+                facts.any { TextMatch.fold(it).contains(check.expected) }
+            }
+            val recallMs = (System.nanoTime() - start) / 1e6 / BrainScenario.recallChecks.size
+            val result = BrainTestResult(
+                time = System.currentTimeMillis(),
+                modelId = model.id,
+                rows = rows,
+                updateOk = BrainScenario.updateOk(final),
+                recallFound = recalled,
+                recallTotal = BrainScenario.recallChecks.size,
+                recallMs = recallMs,
+                notes = final.map { it.title to it.facts.size },
+            )
+            updateMeasure { it.copy(brain = result, brainLive = emptyList()) }
+        }
+    }
+
+    // --- Cerveau ---
+
+    private fun updateBrain(transform: (BrainUi) -> BrainUi) = _state.update { it.copy(brain = transform(it.brain)) }
+
+    fun dismissBrainChip() = updateBrain { it.copy(chip = null) }
+
+    /** « Annuler » sous la conversation : la dernière prise de notes, ou le dernier oubli. */
+    fun undoBrainChip() {
+        val chip = _state.value.brain.chip ?: return
+        updateBrain { it.copy(chip = null) }
+        viewModelScope.launch {
+            when (chip) {
+                is BrainChip.Noted -> brain.store.undo(chip.entry)
+                is BrainChip.Forgot -> brain.store.restore(chip.forgetting)
+            }
+        }
+    }
+
+    /** « Annuler » dans le journal du Cerveau. */
+    fun undoNotes(entry: JournalEntry) {
+        viewModelScope.launch { brain.store.undo(entry) }
+    }
+
+    fun openNote(id: String) {
+        viewModelScope.launch { brain.store.markOpened(id) }
+    }
+
+    fun rewriteNote(id: String, markdown: String) {
+        viewModelScope.launch { brain.store.rewrite(id, markdown) }
+    }
+
+    /** Un fait corrigé ([old]) ou ajouté (null) à la main ; vide, il est supprimé. */
+    fun editFact(noteId: String, old: Fact?, text: String, before: Boolean) {
+        viewModelScope.launch { brain.store.editFact(noteId, old, text, before) }
+    }
+
+    fun deleteFact(noteId: String, fact: Fact, before: Boolean) {
+        viewModelScope.launch { brain.store.deleteFact(noteId, fact, before) }
+    }
+
+    fun deleteNote(id: String) {
+        viewModelScope.launch { brain.store.deleteNote(id) }
+    }
+
+    /** Efface tout le Cerveau (demandé depuis les réglages, avec confirmation). */
+    fun clearBrain() {
+        updateBrain { it.copy(chip = null) }
+        viewModelScope.launch { brain.clear() }
+    }
 
     // --- Mises à jour de l'app ---
 

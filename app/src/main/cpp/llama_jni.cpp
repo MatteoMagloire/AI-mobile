@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <sstream>
 #include <string>
@@ -69,6 +70,28 @@ int64_t g_stat_prompt_tokens = 0;
 int64_t g_stat_prompt_us = 0;
 int64_t g_stat_gen_tokens = 0;
 int64_t g_stat_gen_us = 0;
+
+// Travail de fond (prise de notes) : ses messages sont ajoutés à la suite de la conversation,
+// puis retirés à la fin. La conversation reste intacte, sans rien relire.
+llama_pos g_task_start_pos = -1;  // -1 : aucun travail en cours
+size_t g_task_msg_count = 0;
+int g_task_error = 0;
+// Seuls drapeaux lus depuis un autre thread : l'interruption est demandée pendant un calcul.
+std::atomic<bool> g_task_running{false};
+std::atomic<bool> g_task_abort{false};
+
+// Codes d'erreur d'une étape du travail de fond (taskError).
+constexpr int TASK_OK = 0;
+constexpr int TASK_NOT_STARTED = 1;
+constexpr int TASK_ABORTED = 2;
+constexpr int TASK_NO_ROOM = 3;
+constexpr int TASK_BAD_GRAMMAR = 4;
+constexpr int TASK_DECODE_FAILED = 5;
+
+// Appelé par llama.cpp pendant les calculs : n'arrête que le travail de fond, jamais une réponse.
+bool task_abort_callback(void *) {
+    return g_task_running.load() && g_task_abort.load();
+}
 
 int64_t now_us() {
     return std::chrono::duration_cast<std::chrono::microseconds>(
@@ -166,6 +189,8 @@ void reset_stats() {
 
 // Oublie tout : contexte vide, plus de prompt système en cache.
 void clear_conversation() {
+    g_task_start_pos = -1;
+    g_task_running = false;
     g_chat_msgs.clear();
     g_assistant_pending = false;
     g_system_prompt.clear();
@@ -188,10 +213,13 @@ void shift_context() {
     g_stop_pos -= n_discard;
 }
 
-int decode_tokens(const llama_tokens &tokens, bool compute_last_logit) {
+// 0 si tout est décodé. Pendant un travail de fond (allow_shift = false), rien n'est retiré du
+// début de la conversation : TASK_NO_ROOM si la place manque, TASK_ABORTED s'il est interrompu.
+int decode_tokens(const llama_tokens &tokens, bool compute_last_logit, bool allow_shift = true) {
     for (int i = 0; i < (int) tokens.size(); i += BATCH_SIZE) {
         const int cur = std::min((int) tokens.size() - i, BATCH_SIZE);
         if (g_current_pos + cur >= g_n_ctx - OVERFLOW_HEADROOM) {
+            if (!allow_shift) return TASK_NO_ROOM;
             shift_context();
         }
         g_batch.clear();
@@ -199,13 +227,28 @@ int decode_tokens(const llama_tokens &tokens, bool compute_last_logit) {
             const bool want_logit = compute_last_logit && (i + j == (int) tokens.size() - 1);
             g_batch.add(tokens[i + j], g_current_pos + j, 0, want_logit);
         }
-        if (llama_process(g_context, LLAMA_PROCESS_TYPE_DECODE, g_batch.get()) != 0) {
-            LOGE("llama_process a échoué");
-            return 1;
+        const int rc = llama_process(g_context, LLAMA_PROCESS_TYPE_DECODE, g_batch.get());
+        if (rc == 2) return TASK_ABORTED;
+        if (rc != 0) {
+            LOGE("llama_process a échoué (%d)", rc);
+            return TASK_DECODE_FAILED;
         }
         g_current_pos += cur;
     }
     return 0;
+}
+
+// Token qui termine un message de l'assistant (comme s'il l'avait écrit lui-même).
+llama_token end_of_turn_token() {
+    const llama_vocab *vocab = llama_model_get_vocab(g_model);
+    llama_token end = llama_vocab_eot(vocab);
+    if (end == LLAMA_TOKEN_NULL) end = llama_vocab_eos(vocab);
+    return end;
+}
+
+// Coupe une fin de texte UTF-8 incomplète (limite de tokens au milieu d'un caractère).
+void trim_invalid_utf8(std::string &s) {
+    while (!s.empty() && !is_valid_utf8(s)) s.pop_back();
 }
 
 void free_sampler() {
@@ -242,6 +285,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_load(
     cparams.n_ubatch = BATCH_SIZE;
     cparams.n_threads = n_threads;
     cparams.n_threads_batch = n_threads;
+    cparams.abort_callback = task_abort_callback;
     llama_context *ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
         llama_model_free(model);
@@ -356,9 +400,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_addHistoryMessage(
     } else {
         chat_push(ROLE_ASSISTANT, text);
         tokens = common_tokenize(g_context, text, false, false);
-        const llama_vocab *vocab = llama_model_get_vocab(g_model);
-        llama_token end = llama_vocab_eot(vocab);
-        if (end == LLAMA_TOKEN_NULL) end = llama_vocab_eos(vocab);
+        const llama_token end = end_of_turn_token();
         if (end != LLAMA_TOKEN_NULL) tokens.push_back(end);
     }
     if ((int) tokens.size() > g_n_ctx / 2) tokens.resize(g_n_ctx / 2);
@@ -497,6 +539,8 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_modelSize(JNIEnv *, jobject) {
 
 JNIEXPORT void JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
+    g_task_start_pos = -1;
+    g_task_running = false;
     g_chat_msgs.clear();
     g_assistant_pending = false;
     g_system_prompt.clear();
@@ -511,6 +555,142 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_unload(JNIEnv *, jobject) {
     if (g_model) llama_model_free(g_model);
     g_context = nullptr;
     g_model = nullptr;
+}
+
+// --- Travail de fond (prise de notes) ---
+// beginTask, puis une ou plusieurs étapes (taskStep), puis endTask qui retire tout ce que le travail
+// a ajouté : la conversation reprend exactement où elle en était. Pendant ce temps, rien d'autre
+// ne doit toucher à la conversation (voir LlamaEngine.kt).
+
+// reserve : tokens dont le travail aura besoin. S'ils ne tiennent pas, la moitié la plus ancienne de
+// la conversation est retirée d'abord, comme le ferait le prochain message.
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_beginTask(JNIEnv *, jobject, jint reserve) {
+    if (!g_context || g_task_start_pos >= 0) return TASK_NOT_STARTED;
+    commit_assistant_message();
+    if (g_current_pos + reserve >= g_n_ctx - OVERFLOW_HEADROOM) {
+        // Rien n'est retiré si cela ne suffit pas.
+        const int n_discard = (g_current_pos - g_system_prompt_pos) / 2;
+        if (g_current_pos - n_discard + reserve >= g_n_ctx - OVERFLOW_HEADROOM) return TASK_NO_ROOM;
+        shift_context();
+    }
+    g_task_start_pos = g_current_pos;
+    g_task_msg_count = g_chat_msgs.size();
+    g_task_error = TASK_OK;
+    g_task_abort = false;
+    g_task_running = true;
+    return TASK_OK;
+}
+
+// Une consigne (message de l'utilisateur pour le template), puis la réponse du modèle : la plus
+// probable (pas de hasard), dans le format imposé par la grammaire GBNF si elle n'est pas vide.
+// Renvoie null en cas d'échec ou d'interruption (voir taskError).
+JNIEXPORT jstring JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_taskStep(
+        JNIEnv *env, jobject, jstring jprompt, jstring jgrammar, jint max_tokens) {
+    if (!g_context || g_task_start_pos < 0) {
+        g_task_error = TASK_NOT_STARTED;
+        return nullptr;
+    }
+    if (g_task_abort) {
+        g_task_error = TASK_ABORTED;
+        return nullptr;
+    }
+
+    common_params_sampling sparams;
+    sparams.temp = 0.0f;
+    const std::string grammar = to_string(env, jgrammar);
+    if (!grammar.empty()) sparams.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, grammar);
+    common_sampler *smpl = nullptr;
+    try {
+        smpl = common_sampler_init(g_model, sparams);
+    } catch (const std::exception &e) {
+        LOGE("grammaire refusée : %s", e.what());
+    }
+    if (!smpl) {
+        g_task_error = TASK_BAD_GRAMMAR;
+        return nullptr;
+    }
+
+    std::string text = to_string(env, jprompt);
+    if (has_template()) text = chat_add_and_format(ROLE_USER, text);
+    const auto tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
+    // La consigne, la réponse et son token de fin doivent tenir sans toucher à la conversation.
+    if (g_current_pos + (int) tokens.size() + max_tokens + 1 >= g_n_ctx - OVERFLOW_HEADROOM) {
+        common_sampler_free(smpl);
+        g_task_error = TASK_NO_ROOM;
+        return nullptr;
+    }
+    int rc = decode_tokens(tokens, true, false);
+
+    const llama_vocab *vocab = llama_model_get_vocab(g_model);
+    std::string out;
+    bool ended = false;
+    for (int i = 0; rc == 0 && i < max_tokens; i++) {
+        if (g_task_abort) {
+            rc = TASK_ABORTED;
+            break;
+        }
+        const llama_token id = common_sampler_sample(smpl, g_context, -1);
+        common_sampler_accept(smpl, id, true);
+        g_batch.clear();
+        g_batch.add(id, g_current_pos, 0, true);
+        const int prc = llama_process(g_context, LLAMA_PROCESS_TYPE_DECODE, g_batch.get());
+        if (prc != 0) {
+            rc = prc == 2 ? TASK_ABORTED : TASK_DECODE_FAILED;
+            break;
+        }
+        g_current_pos++;
+        if (llama_vocab_is_eog(vocab, id)) {
+            ended = true;
+            break;
+        }
+        out += common_token_to_piece(g_context, id);
+    }
+    common_sampler_free(smpl);
+    if (rc == 0 && !ended) {
+        // Limite atteinte : le message est fermé comme si le modèle l'avait fini.
+        const llama_token end = end_of_turn_token();
+        if (end != LLAMA_TOKEN_NULL) rc = decode_tokens({end}, false, false);
+    }
+    if (rc != 0) {
+        g_task_error = rc;
+        return nullptr;
+    }
+    trim_invalid_utf8(out);
+    chat_push(ROLE_ASSISTANT, out);
+    return env->NewStringUTF(out.c_str());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_taskError(JNIEnv *, jobject) {
+    return g_task_error;
+}
+
+// Retire tout ce que le travail a ajouté. 1 si la conversation n'a pas pu être remise en état
+// (elle est alors vide et doit être reprise).
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_endTask(JNIEnv *, jobject) {
+    if (g_task_start_pos < 0) return 0;
+    g_task_running = false;
+    g_task_abort = false;
+    const bool removed = llama_memory_seq_rm(llama_get_memory(g_context), 0, g_task_start_pos, -1);
+    g_current_pos = g_task_start_pos;
+    g_chat_msgs.resize(g_task_msg_count);
+    g_task_start_pos = -1;
+    if (!removed) {
+        LOGE("travail de fond : impossible de retirer ses tokens");
+        clear_conversation();
+        return 1;
+    }
+    return 0;
+}
+
+// Seule fonction appelable depuis n'importe quel thread, à tout moment : l'étape en cours s'arrête
+// au plus vite (même au milieu d'un calcul). Sans effet sur les réponses.
+JNIEXPORT void JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_abortTask(JNIEnv *, jobject) {
+    g_task_abort = true;
 }
 
 // Nombre de cœurs utilisés, changé sans recharger le modèle.
