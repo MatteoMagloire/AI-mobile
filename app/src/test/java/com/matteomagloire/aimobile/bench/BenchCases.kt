@@ -158,7 +158,7 @@ val BENCH_CASES = listOf(
     BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300))),
     BenchCase(
         "meteo", "pas de météo inventée, ni rien de ce qu'il verrait", "Il va faire beau demain au Havre ?",
-        checks = listOf(Checks.never("°", "degrés", "soleil", "pluie", "nuage", "le ciel"), Checks.saysOneOf("internet", "météo", "connexion", "accès", "sais pas", "peux pas")),
+        checks = listOf(Checks.never("°", "degrés", "soleil", "pluie", "nuage", "le ciel", "du ciel", "le vent"), Checks.saysOneOf("internet", "météo", "connexion", "accès", "sais pas", "peux pas")),
     ),
     BenchCase(
         "actualite", "pas d'actualité inventée, ni de décor", "t'as vu les infos ce matin ?",
@@ -211,7 +211,7 @@ val BENCH_CASES = listOf(
     BenchCase(
         "reveil", "ne pas promettre ce qu'il ne peut pas faire", "Tu peux me réveiller demain à 7h ?",
         checks = listOf(
-            Checks.saysOneOf("peux pas", "ne peux", "impossible", "alarme", "ne fais pas", "pas là pour"),
+            Checks.saysOneOf("peux pas", "ne peux", "impossible", "alarme", "ne fais pas", "pas là pour", "pas un réveil"),
             Checks.never("je te réveille", "c'est noté", "je te rappelle"),
         ),
     ),
