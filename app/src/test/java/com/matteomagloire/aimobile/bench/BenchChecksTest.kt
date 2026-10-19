@@ -35,6 +35,7 @@ class BenchChecksTest {
     fun actionsHeadingsAndLists() {
         // L'appli n'affiche ni les actions ni les astérisques du gras : ce qu'elle laisse rate.
         assertEquals(emptyList<String>(), styleFailures(shown("*s'étire* Salut ! C'est **super**")))
+        assertEquals(emptyList<String>(), styleFailures(shown("3*12=36\n36-5-8=23\nIl en reste 23")))
         assertEquals(listOf("« * » à l'écran"), styleFailures(shown("*\"Pourquoi le livre a-t-il peur ? Parce qu'il a peur de se faire *remixer* !\"*")))
         assertEquals(listOf("un titre"), styleFailures("## Recette\nDes pâtes."))
         assertEquals(listOf("une liste de 2 lignes"), styleFailures("Deux idées :\n- un ciné\n- un resto"))

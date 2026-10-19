@@ -42,6 +42,8 @@ namespace {
 
 constexpr int BATCH_SIZE = 512;
 constexpr int OVERFLOW_HEADROOM = 4;
+// Pénalité DRY de llama.cpp : une suite qui se répète l'est de moins en moins (0 la coupe).
+constexpr float DRY_MULTIPLIER = 0.8f;
 constexpr const char *ROLE_SYSTEM = "system";
 constexpr const char *ROLE_USER = "user";
 constexpr const char *ROLE_ASSISTANT = "assistant";
@@ -51,6 +53,10 @@ llama_context *g_context = nullptr;
 common_batch g_batch;
 common_chat_templates_ptr g_chat_templates;
 common_sampler *g_sampler = nullptr;
+// Réglages du sampler en place : le même est gardé d'un message à l'autre.
+float g_sampler_temp = 0.0f;
+float g_sampler_top_p = 0.0f;
+int g_sampler_seed = 0;
 int g_n_ctx = 4096;
 int g_n_threads = 4;
 bool g_use_jinja = true;
@@ -371,6 +377,8 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_load(
         return 2;
     }
 
+    // Le sampler gardé d'un message à l'autre dépend du vocabulaire : il est refait pour ce modèle.
+    free_sampler();
     g_model = model;
     g_context = ctx;
     g_batch = common_batch(ctx);
@@ -384,16 +392,24 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_load(
 }
 
 // seed < 0 : graine aléatoire (usage normal) ; sinon réponses reproductibles (banc d'essai).
+// Avec les mêmes réglages, le sampler en place est gardé : DRY relit tout le vocabulaire à sa
+// création. Il est remis à zéro à chaque message (nouvelle graine aléatoire, ou la même graine).
 JNIEXPORT void JNICALL
 Java_com_matteomagloire_aimobile_llm_LlamaNative_configureSampler(
         JNIEnv *, jobject, jfloat temp, jfloat top_p, jint seed) {
     if (!g_model) return;
+    if (g_sampler && temp == g_sampler_temp && top_p == g_sampler_top_p && seed == g_sampler_seed) return;
     free_sampler();
     common_params_sampling sparams;
     sparams.temp = temp;
     sparams.top_p = top_p;
+    // Vu au banc d'Axo : « J'AI EU MON PERMIS !!! » donnait parfois « Ohhhhhh… » jusqu'à la limite.
+    sparams.dry_multiplier = DRY_MULTIPLIER;
     if (seed >= 0) sparams.seed = (uint32_t) seed;
     g_sampler = common_sampler_init(g_model, sparams);
+    g_sampler_temp = temp;
+    g_sampler_top_p = top_p;
+    g_sampler_seed = seed;
 }
 
 JNIEXPORT jint JNICALL

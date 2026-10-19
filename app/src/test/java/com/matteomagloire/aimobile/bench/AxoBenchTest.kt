@@ -49,13 +49,17 @@ class AxoBenchTest {
         val promptTokens = engine.usage().systemPromptTokens
 
         val results = LinkedHashMap<BenchCase, List<Answer>>()
+        // Le plus long réglage du tirage : DRY relit tout le vocabulaire (l'appli garde le sien d'un message à l'autre).
+        var samplerMs = 0L
         for (case in BENCH_CASES) {
             val memory = memoryFor(case)
             results[case] = seeds.map { seed ->
                 // Comme à la réouverture de l'appli : la personnalité (gardée en mémoire), puis les échanges d'avant.
                 engine.startConversation(prompt)
                 engine.replay(HistoryWindow.select(HistoryWindow.turns(history(case))))
+                val configured = System.nanoTime()
                 engine.configureSampler(settings.temperature, settings.topP, seed)
+                samplerMs = maxOf(samplerMs, (System.nanoTime() - configured) / 1_000_000)
                 val start = System.nanoTime()
                 val raw = StringBuilder()
                 engine.generate(memory + case.message, settings.maxTokens).collect { raw.append(it) }
@@ -71,7 +75,7 @@ class AxoBenchTest {
         }
         engine.unload()
 
-        val report = report(model.fileName, seeds, trial, prompt, promptTokens, settings, results)
+        val report = report(model.fileName, seeds, trial, prompt, promptTokens, samplerMs, settings, results)
         File("build/axo-bench").apply { mkdirs() }.resolve("report.md").writeText(report)
         val failed = results.flatMap { (case, answers) -> answers.filter { it.failures.isNotEmpty() }.map { case.id } }
         assertTrue("Réponses qui ratent : ${failed.joinToString()} (voir build/axo-bench/report.md)", failed.isEmpty())
@@ -93,6 +97,7 @@ class AxoBenchTest {
         trial: String?,
         prompt: String,
         promptTokens: Int,
+        samplerMs: Long,
         settings: Settings,
         results: Map<BenchCase, List<Answer>>,
     ): String = buildString {
@@ -102,7 +107,7 @@ class AxoBenchTest {
         appendLine()
         appendLine(
             "Modèle : `$modelFile` · créativité ${"%.2f".format(Locale.FRANCE, settings.temperature)} · " +
-                "graines ${seeds.joinToString()} · ${settings.maxTokens} tokens au plus",
+                "graines ${seeds.joinToString()} · ${settings.maxTokens} tokens au plus · tirage réglé en $samplerMs ms au plus",
         )
         appendLine()
         appendLine("Personnalité ${if (trial == null) "de l'appli" else "à l'essai"} : $promptTokens tokens (${prompt.length} caractères)")

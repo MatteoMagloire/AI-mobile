@@ -48,9 +48,16 @@ class AnswerTextTest {
     }
 
     @Test
+    fun multiplicationsShowTheirSign() {
+        // Vu au banc : le calcul posé, juste, avec « * ».
+        assertEquals("3×12=36\n36-5-8=23\nIl en reste 23", AnswerText.styled("3*12=36\n36-5-8=23\nIl en reste 23").text)
+        assertEquals("3×12 = 36 et 2 × 5 = 10", AnswerText.styled("3*12 = 36 et 2 * 5 = 10").text)
+    }
+
+    @Test
     fun otherAsterisksStay() {
-        // Un calcul, une réponse en train de s'écrire : rien à mettre en forme.
-        for (answer in listOf("3*12 = 36 et 2*5 = 10", "*\"Maman, aujou", "1. **Un pique", "Note : 5 * 3 = 15")) {
+        // Une réponse en train de s'écrire, une puissance : rien à mettre en forme.
+        for (answer in listOf("*\"Maman, aujou", "1. **Un pique", "2**3", "5* fois")) {
             val s = AnswerText.styled(answer)
             assertEquals(answer, s.text)
             assertEquals(emptyList<IntRange>(), s.bold + s.italic)

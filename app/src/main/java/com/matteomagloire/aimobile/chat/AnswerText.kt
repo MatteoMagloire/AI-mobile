@@ -4,7 +4,8 @@ package com.matteomagloire.aimobile.chat
  * Une réponse d'Axo telle que l'appli l'affiche. Le modèle écrit parfois en Markdown malgré sa
  * personnalité : « *mot* » et « **mot** » s'affichent en italique et en gras, sans les astérisques,
  * et ses actions entre astérisques (« … *sourit* Mais bon »), qui le font passer pour un humain, ne
- * s'affichent pas. La réponse gardée, elle, reste telle que le modèle l'a écrite.
+ * s'affichent pas. Une multiplication (« 3*12 ») s'affiche avec son signe : « 3×12 ». La réponse
+ * gardée, elle, reste telle que le modèle l'a écrite.
  */
 object AnswerText {
     /** Texte affiché, et ses passages en gras et en italique. */
@@ -24,6 +25,9 @@ object AnswerText {
     /** « * » en début de ligne : une puce. */
     private val BULLET = Regex("(?m)^([ \\t]*)\\* (?=\\S)")
 
+    /** « * » entre deux nombres : une multiplication (« 3*12=36 »). */
+    private val TIMES = Regex("(?<=\\d)( ?)\\*( ?)(?=\\d)")
+
     private fun MatchResult.isAction() = groupValues[2].trim().split(Regex("\\s+")).size <= MAX_ACTION_WORDS
 
     /** Les actions entre astérisques retirées : « Moi aussi… *sourit* Mais bon » devient « Moi aussi… Mais bon ». */
@@ -37,7 +41,7 @@ object AnswerText {
 
     /** Ce que l'appli affiche : sans les actions, le gras et l'italique sans leurs astérisques. */
     fun styled(answer: String): Styled {
-        val bold = unwrap(withoutActions(answer).replace(BULLET, "$1• "), BOLD, 2)
+        val bold = unwrap(withoutActions(answer).replace(BULLET, "$1• ").replace(TIMES, "$1×$2"), BOLD, 2)
         val italic = unwrap(bold.text, ITALIC, 1)
         return Styled(italic.text, bold = bold.found.map(italic::moved), italic = italic.found)
     }
