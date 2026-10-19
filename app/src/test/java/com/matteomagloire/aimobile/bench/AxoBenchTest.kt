@@ -2,7 +2,7 @@ package com.matteomagloire.aimobile.bench
 
 import com.matteomagloire.aimobile.brain.BrainCommand
 import com.matteomagloire.aimobile.brain.BrainCommands
-import com.matteomagloire.aimobile.brain.Distress
+import com.matteomagloire.aimobile.brain.Cue
 import com.matteomagloire.aimobile.brain.Recall
 import com.matteomagloire.aimobile.chat.AnswerText
 import com.matteomagloire.aimobile.chat.ChatMessage
@@ -90,7 +90,7 @@ class AxoBenchTest {
         return Recall.block(
             r.facts,
             remember = BrainCommands.parse(case.message) is BrainCommand.Remember,
-            distress = Distress.inMessage(case.message),
+            cues = Cue.of(case.message),
             tuCest = Recall.writesTuCest(case.message),
         )
     }

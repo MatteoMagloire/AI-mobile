@@ -167,11 +167,11 @@ class Brain(
         dormantDays: Int = DEFAULT_DORMANT_DAYS,
     ): Prepared {
         store.load()
-        val distress = Distress.inMessage(message)
+        val cues = Cue.of(message)
         val command = BrainCommands.parse(message)
         if (command is BrainCommand.Forget) {
             val forgetting = store.forget(command.what, time, NoteTaker.excerpt(message))
-            return Prepared(Recall.block(emptyList(), forgotten = forgetting.texts, nothingToForget = forgetting.isEmpty, distress = distress), forgetting)
+            return Prepared(Recall.block(emptyList(), forgotten = forgetting.texts, nothingToForget = forgetting.isEmpty, cues = cues), forgetting)
         }
         val notes = store.notes.value
         val today = LocalDate.now()
@@ -181,7 +181,7 @@ class Brain(
         // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
         val used = (r.kept + r.followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
         if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
-        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember, distress = distress, tuCest = Recall.writesTuCest(message)))
+        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember, cues = cues, tuCest = Recall.writesTuCest(message)))
     }
 
     /** Montre à l'écran ce qu'Axo vient de faire avant de répondre : chercher, lire, suivre un lien, réveiller. */

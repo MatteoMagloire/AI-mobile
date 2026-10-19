@@ -180,19 +180,19 @@ object Recall {
      * Ce que le modèle lit avant le message. Vide s'il n'y a rien à dire : le message est lu tel quel.
      * [forgotten] : faits qu'il vient d'oublier à la demande de l'utilisateur ; [nothingToForget] : la
      * demande d'oubli ne correspondait à rien ; [remember] : il a demandé de retenir son message ;
-     * [distress] : il va peut-être très mal ([Distress]) ; [tuCest] : il a écrit « tu c'est » pour
-     * « tu sais » ([writesTuCest]).
+     * [cues] : ce qu'Axo lit juste avant ce message ([Cue.of]) ; [tuCest] : il a écrit « tu c'est »
+     * pour « tu sais » ([writesTuCest]).
      */
     fun block(
         facts: List<String>,
         forgotten: List<String> = emptyList(),
         nothingToForget: Boolean = false,
         remember: Boolean = false,
-        distress: Boolean = false,
+        cues: Set<Cue> = emptySet(),
         tuCest: Boolean = false,
         name: String = USER_NAME,
     ): String {
-        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && !distress && !tuCest) return ""
+        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && cues.isEmpty() && !tuCest) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
@@ -204,10 +204,7 @@ object Recall {
             }
             if (nothingToForget) append("[Mémoire d'Axo : tu n'avais rien noté qui corresponde à ce qu'il veut te faire oublier]\n")
             if (remember) append("[Mémoire d'Axo : tu notes dans ton Cerveau ce qu'il te demande de retenir, dis-lui simplement que c'est noté]\n")
-            if (distress) {
-                append("[Pour Axo : il va peut-être très mal. Prends-le au sérieux, dis-lui que tu es là pour lui, ")
-                append("et qu'il peut appeler le 3114 (gratuit, jour et nuit) ou parler tout de suite à un proche]\n")
-            }
+            for (cue in Cue.entries) if (cue in cues) append("[Pour Axo : ").append(cue.text).append("]\n")
             append(if (tuCest) "[Message de $name, où « tu c'est » veut dire « tu sais »]\n" else "[Message de $name]\n")
         }
     }

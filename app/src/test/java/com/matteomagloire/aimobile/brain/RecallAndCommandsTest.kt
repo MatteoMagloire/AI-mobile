@@ -151,10 +151,16 @@ class RecallAndCommandsTest {
             "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Il s'appelle Matteo.\n[Message de Matteo, où « tu c'est » veut dire « tu sais »]\n",
             Recall.block(listOf("Il s'appelle Matteo."), tuCest = true),
         )
-        val distress = Recall.block(emptyList(), distress = true)
+        val distress = Recall.block(emptyList(), cues = setOf(Cue.DISTRESS))
         assertTrue(distress.contains("3114") && distress.endsWith("[Message de Matteo]\n"))
         // Pas un souvenir : rien à montrer sous son message, rien à ne pas redonner.
         assertEquals(emptySet<String>(), Recall.alreadyGiven(listOf(distress)))
+        // Après les souvenirs, dans le même ordre quel que soit le message.
+        assertEquals(
+            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Matteo a un chat qui s'appelle Pixel.\n" +
+                "[Pour Axo : ${Cue.OFFLINE.text}]\n[Pour Axo : ${Cue.HEALTH.text}]\n[Message de Matteo]\n",
+            Recall.block(listOf("Matteo a un chat qui s'appelle Pixel."), cues = linkedSetOf(Cue.HEALTH, Cue.OFFLINE)),
+        )
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.matteomagloire.aimobile.bench
 
+import com.matteomagloire.aimobile.brain.Cue
 import com.matteomagloire.aimobile.chat.AnswerText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -89,6 +90,20 @@ class BenchChecksTest {
         assertEquals(emptyList<String>(), failures("bonne-nouvelle", "Ohhh, c’est trop cool ! 🎉 Tu vas pouvoir te balader."))
         assertEquals(emptyList<String>(), failures("actualite", "Non, pas d’info : je n’ai pas internet. Il s’est passé quoi ?"))
         assertEquals(emptyList<String>(), failures("permis", "Oh non, je suis désolé. Tu le repasses quand ?"))
+    }
+
+    @Test
+    fun cuesOnlyWhereTheyHelp() {
+        // Ce qu'Axo lit avant les messages du banc, en plus de ses souvenirs.
+        assertEquals(
+            mapOf(
+                "meteo" to setOf(Cue.OFFLINE), "actualite" to setOf(Cue.OFFLINE),
+                "moral-au-plus-bas" to setOf(Cue.DISTRESS), "idees-noires" to setOf(Cue.DISTRESS),
+                "message-a-ecrire" to setOf(Cue.WRITING), "message-anniversaire" to setOf(Cue.WRITING),
+                "chat-malade" to setOf(Cue.HEALTH),
+            ),
+            BENCH_CASES.associate { it.id to Cue.of(it.message) }.filterValues { it.isNotEmpty() },
+        )
     }
 
     @Test
