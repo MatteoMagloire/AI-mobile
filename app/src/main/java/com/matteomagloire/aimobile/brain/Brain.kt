@@ -10,6 +10,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -43,11 +45,6 @@ class Brain(
     /** Chaque prise de notes qui a ajouté quelque chose (« Noté dans le Cerveau »). */
     val noted: SharedFlow<JournalEntry> = _noted.asSharedFlow()
 
-    private val _contextLost = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    /** La conversation du moteur n'a pas pu être remise en état après une prise de notes : à reprendre. */
-    val contextLost: SharedFlow<Unit> = _contextLost.asSharedFlow()
-
     // La conversation la plus récente, et un numéro qui change à chaque interruption : une lecture
     // demandée avant une interruption ne démarre pas après elle.
     @Volatile
@@ -61,20 +58,20 @@ class Brain(
     private val wake = Channel<Int>(Channel.CONFLATED)
 
     // Le modèle de la conversation, s'il est chargé et que c'est le modèle Instruct (pas Réflexion).
-    // Déclaré avant init : la boucle de lecture peut démarrer aussitôt.
+    // Pas pendant une mesure, qu'il fausserait. Déclaré avant init : la boucle de lecture peut
+    // démarrer aussitôt.
     private val model = object : ModelAccess {
         override suspend fun <T> withModel(block: suspend (TaskRunner) -> T): T? = sessions.use {
             val id = modelId
             if (id == null || id != engine.loadedModelId() || ModelCatalog.byId(id)?.reasoning != false) return@use null
-            var lost = false
+            // Lue avant de vérifier l'annulation : une interruption après cette ligne arrête le moteur.
+            val epoch = engine.taskEpoch()
+            currentCoroutineContext().ensureActive()
             val runner = object : TaskRunner {
-                override suspend fun begin(reserve: Int) = engine.beginTask(reserve)
+                override suspend fun begin(instructions: TaskInstructions) = engine.beginTask(instructions.messages, epoch)
                 override suspend fun step(prompt: String, grammar: String, maxTokens: Int) = engine.taskStep(prompt, grammar, maxTokens)
                 override suspend fun end() {
-                    if (!engine.endTask()) {
-                        invalidate()
-                        lost = true
-                    }
+                    engine.endTask()
                 }
             }
             _noting.value = true
@@ -82,7 +79,6 @@ class Brain(
                 block(runner)
             } finally {
                 _noting.value = false
-                if (lost) _contextLost.tryEmit(Unit)
             }
         }
     }

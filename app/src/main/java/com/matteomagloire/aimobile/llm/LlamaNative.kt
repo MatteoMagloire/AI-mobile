@@ -27,9 +27,11 @@ internal object LlamaNative {
     external fun lastStats(): LongArray
     external fun modelSize(): Long
     external fun setThreads(nThreads: Int)
-    external fun beginTask(reserve: Int): Int
+    external fun abortEpoch(): Int
+    external fun beginTask(prefix: Array<String>, epoch: Int): Int
     external fun taskStep(prompt: String, grammar: String, maxTokens: Int): String?
     external fun taskError(): Int
+    external fun taskStats(): LongArray
     external fun endTask(): Int
     external fun abortTask()
     external fun unload()

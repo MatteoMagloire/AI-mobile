@@ -20,9 +20,12 @@ object TextMatch {
     /** Tous les mots, repliés, petits mots compris. */
     fun allWords(text: String): List<String> = fold(text).split(SPLIT).filter { it.isNotEmpty() }
 
-    /** Les mots qui portent le sens : sans les petits mots ni le prénom, au singulier. */
+    /**
+     * Les mots qui portent le sens : sans les petits mots ni le prénom, au singulier, et quelques
+     * synonymes ramenés au même mot (« vit » et « habite », « bosse » et « travaille »).
+     */
     fun words(text: String): Set<String> =
-        allWords(text).filter { it !in STOPWORDS && (it.length > 1 || it[0].isDigit()) }.map(::stem).toSet()
+        allWords(text).filter { it !in STOPWORDS && (it.length > 1 || it[0].isDigit()) }.map { stem(it).let { w -> SAME[w] ?: w } }.toSet()
 
     /** Pluriel en -s ou -x retiré (« chats » -> « chat »). */
     fun stem(word: String): String {
@@ -43,6 +46,15 @@ object TextMatch {
 
     /** Poids d'un mot présent dans [df] textes sur [n] : un mot rare compte plus. */
     fun idf(n: Int, df: Int): Double = ln((n + 1.0) / df.coerceAtLeast(1)) + 1.0
+
+    // Mots qui disent la même chose dans ce qu'on raconte de soi (repliés, au singulier).
+    private val SAME: Map<String, String> = buildMap {
+        for (w in listOf("vit", "vis", "vivre", "habiter", "demenage", "demenager", "installe")) put(w, "habite")
+        for (w in listOf("travaille", "travailler", "bosse", "bosser", "boulot", "job", "taf", "emploi")) put(w, "travail")
+        for (w in listOf("developpeur", "developpeuse", "developper", "dev")) put(w, "developpe")
+        for (w in listOf("adore", "adorer", "aimer", "kiffe")) put(w, "aime")
+        for (w in listOf("etudiant", "etudiante", "etude", "etudier")) put(w, "etudie")
+    }
 
     private val STOPWORDS: Set<String> = (
         "le la les l un une des du de d et ou a au aux en dans sur sous pour par avec sans chez vers entre " +

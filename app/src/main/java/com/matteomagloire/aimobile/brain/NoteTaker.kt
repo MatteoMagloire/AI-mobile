@@ -8,14 +8,23 @@ import kotlinx.coroutines.withContext
 
 /** Le modèle, vu par la prise de notes : un travail de fond en plusieurs étapes, retiré à la fin. */
 interface TaskRunner {
-    /** False si le travail ne peut pas commencer. */
-    suspend fun begin(reserve: Int): Boolean
+    /** Commence un travail avec ses [instructions] (gardées d'un travail à l'autre). False s'il ne peut pas commencer. */
+    suspend fun begin(instructions: TaskInstructions): Boolean
 
     /** Réponse à [prompt], au format de la grammaire GBNF [grammar]. Null si l'étape a échoué ou a été interrompue. */
     suspend fun step(prompt: String, grammar: String, maxTokens: Int): String?
 
-    /** Retire tout ce que le travail a ajouté à la conversation. */
+    /** Retire tout ce que le travail a ajouté après ses consignes. */
     suspend fun end()
+}
+
+/**
+ * Consignes d'un travail de fond : un prompt système et des exemples (message, réponse attendue).
+ * Le moteur les garde en mémoire : elles ne sont lues qu'une fois par chargement du modèle.
+ */
+data class TaskInstructions(val system: String, val examples: List<Pair<String, String>>) {
+    /** Pour le moteur : le prompt système, puis chaque message d'exemple et sa réponse. */
+    val messages: List<String> get() = listOf(system) + examples.flatMap { listOf(it.first, it.second) }
 }
 
 /** Accès au modèle pour un travail de fond. */
@@ -63,13 +72,16 @@ sealed interface Reading {
 }
 
 /**
- * Prise de notes : après un échange, le modèle Instruct relève ce qui vaut d'être retenu, en petites
- * étapes au format imposé (grammaire GBNF) pour qu'un petit modèle s'y tienne. Le code décide des
- * doublons ; le modèle ne tranche que les cas douteux (un fait devenu faux).
+ * Prise de notes : après un échange, le modèle Instruct relève ce qui vaut d'être retenu. Il travaille
+ * à part de la conversation et ne voit que le dernier message (avec la question d'Axo juste avant,
+ * pour une réponse courte) : il ne peut pas reprendre ce qui a été dit plus tôt. Ses consignes et des
+ * exemples restent en mémoire d'une prise de notes à l'autre. Le format est imposé (grammaire GBNF)
+ * pour qu'un petit modèle s'y tienne, et le code écarte ce que le message ne dit pas, ce qui ne dure
+ * pas et les doublons ; le modèle ne tranche que les cas douteux (un fait devenu faux).
  *
- * 1. Les faits : « aucun », ou une à trois lignes « - Matteo … ».
- * 2. La note de chacun : « Moi », une note existante proche, ou une nouvelle note.
- * 3. Seulement si la note contient un fait ressemblant : le nouveau le rend-il faux ?
+ * 1. Les faits : « aucun », ou une à trois lignes « Note : fait. », la note étant « Moi » ou celle
+ *    d'un proche, d'un animal ou d'un sujet à part, avec son type.
+ * 2. Seulement si la note contient un fait ressemblant : le nouveau le rend-il faux ?
  */
 class NoteTaker(private val name: String = USER_NAME) {
 
@@ -89,8 +101,9 @@ class NoteTaker(private val name: String = USER_NAME) {
             return Reading.Done(entry)
         }
         val text = ((command as? BrainCommand.Remember)?.what ?: exchange.message).take(MAX_MESSAGE_CHARS)
-        val thought = model.withModel { runner -> think(runner, text, forced, store.notes.value, store.forgotten()) }
-            ?: return Reading.Later
+        val thought = model.withModel { runner ->
+            think(runner, text, forced, store.notes.value, store.forgotten(), exchange.previousReply)
+        } ?: return Reading.Later
         // Même interrompu à la fin, ce qui a été compris est noté.
         val entry = withContext(NonCancellable) {
             store.record(exchange, excerpt(exchange.message), thought, (System.nanoTime() - start) / 1_000_000)
@@ -98,47 +111,60 @@ class NoteTaker(private val name: String = USER_NAME) {
         return Reading.Done(entry)
     }
 
-    /** Les étapes du modèle. Interrompu : CancellationException, rien n'est noté. */
-    suspend fun think(runner: TaskRunner, message: String, forced: Boolean, notes: List<Note>, forgotten: List<String>): Thought {
-        if (!runner.begin(RESERVE_TOKENS)) return Thought.Failed("début")
-        try {
-            val raw = runner.step(extractPrompt(message, forced), extractGrammar(forced), EXTRACT_TOKENS)
-                ?: return failed("lecture")
-            val all = dedupe(parseFacts(raw))
-            if (all.isEmpty()) return Thought.Empty
-            val known = all.filter { isKnown(it, notes, forgotten) }
-            val fresh = all - known.toSet()
-            if (fresh.isEmpty()) return Thought.Known(known)
+    /** Lit les consignes sans rien noter (Test du Cerveau : pour mesurer la suite à part). */
+    suspend fun prepare(runner: TaskRunner): Boolean {
+        val ok = runner.begin(instructions)
+        if (ok) withContext(NonCancellable) { runner.end() }
+        return ok
+    }
 
-            val candidates = candidates(fresh, notes)
-            val placementRaw = runner.step(
-                placePrompt(candidates),
-                placeGrammar(fresh.size, candidates),
-                PLACE_TOKENS_PER_FACT * fresh.size + 8,
-            )
-            if (placementRaw == null) currentCoroutineContext().ensureActive()
-            val placements = placementRaw?.let { parsePlacement(it, fresh.size, candidates, notes) }
+    /**
+     * Les étapes du modèle. [previousReply] : la réponse d'Axo avant le message. Interrompu :
+     * CancellationException, rien n'est noté.
+     */
+    suspend fun think(
+        runner: TaskRunner,
+        message: String,
+        forced: Boolean,
+        notes: List<Note>,
+        forgotten: List<String>,
+        previousReply: String = "",
+    ): Thought {
+        if (!runner.begin(instructions)) return failed("début")
+        try {
+            val question = if (forced) null else questionBefore(message, previousReply)
+            val raw = runner.step(readPrompt(message, forced, question), readGrammar(forced), READ_TOKENS)
+                ?: return failed("lecture")
+            val source = TextMatch.words(message) + question?.let { TextMatch.words(it) }.orEmpty()
+            val all = dedupe(parseLines(raw).filter { keep(it.fact, source, forced) })
+            if (all.isEmpty()) return Thought.Empty
+            val known = all.filter { isKnown(it.fact, notes, forgotten) }
+            val fresh = all - known.toSet()
+            if (fresh.isEmpty()) return Thought.Known(known.map { it.fact })
 
             val planned = ArrayList<PlannedFact>(fresh.size)
-            for ((i, fact) in fresh.withIndex()) {
-                val target = placements?.getOrNull(i) ?: Target(Note.ME_ID, Note.ME_TITLE, null)
+            for (line in fresh) {
+                val target = target(line, notes)
                 val note = target.id?.let { id -> notes.firstOrNull { it.id == id } }
-                val words = TextMatch.words(fact)
+                val words = TextMatch.words(line.fact)
                 val current = note?.facts.orEmpty()
                 val supersedes = current.filter { coverage(TextMatch.words(it.text), words) >= SUPERSEDE }.map { it.text }
+                // Le nom de la note (« Léa ») est dans tous ses faits : il ne les rend pas ressemblants.
+                val title = note?.let { TextMatch.words(it.title) }.orEmpty()
+                fun likeness(f: Fact) = TextMatch.similarity(words - title, TextMatch.words(f.text) - title)
                 val similar = current
-                    .filter { it.text !in supersedes && TextMatch.similarity(words, TextMatch.words(it.text)) >= SIMILAR }
-                    .sortedByDescending { TextMatch.similarity(words, TextMatch.words(it.text)) }
+                    .filter { it.text !in supersedes && likeness(it) >= SIMILAR }
+                    .sortedByDescending { likeness(it) }
                     .take(MAX_SIMILAR)
                 var replaces: String? = null
                 if (similar.isNotEmpty()) {
-                    val answer = runner.step(replacePrompt(fact, note!!.title, similar), replaceGrammar(similar.size), 4)
+                    val answer = runner.step(replacePrompt(line.fact, note!!.title, similar), replaceGrammar(similar.size), 4)
                     if (answer == null) currentCoroutineContext().ensureActive()
                     replaces = answer?.trim()?.toIntOrNull()?.let { similar.getOrNull(it - 1)?.text }
                 }
-                planned += PlannedFact(fact, target.id, target.title, target.tag, replaces, supersedes)
+                planned += PlannedFact(line.fact, target.id, target.title, target.tag, replaces, supersedes)
             }
-            return Thought.Facts(planned, known)
+            return Thought.Facts(planned, known.map { it.fact })
         } finally {
             withContext(NonCancellable) { runner.end() }
         }
@@ -151,48 +177,111 @@ class NoteTaker(private val name: String = USER_NAME) {
 
     // --- Étape 1 : les faits ---
 
-    fun extractPrompt(message: String, forced: Boolean): String = if (forced) {
-        "[Mémoire] Tâche invisible pour $name, ta réponse ne lui sera pas montrée.\n" +
-            "Il t'a demandé de retenir ceci : « $message »\n" +
-            "Écris-le en une à trois lignes courtes qui commencent par « - $name », fidèles à ses mots. N'invente rien."
-    } else {
-        "[Mémoire] Tâche invisible pour $name, ta réponse ne lui sera pas montrée.\n" +
-            "Son dernier message : « $message »\n" +
-            "Relève ce qu'il y révèle de durable sur lui et sa vie : identité, proches, animaux, travail, études, lieux, " +
-            "goûts, projets, santé, habitudes.\n" +
-            "Une ligne courte par fait, qui commence par « - $name », fidèle à ses mots. N'invente rien. " +
-            "Ignore ce qui ne dure pas (humeur du moment, repas, programme du jour), les questions, et ce que toi, Axo, as dit.\n" +
-            "S'il n'y a rien de durable : aucun"
+    /** Les consignes, et des exemples des deux étapes qui montrent le format (sans reprendre le Test du Cerveau). */
+    val instructions = TaskInstructions(
+        system = "Tu tiens le carnet de notes d'Axo sur $name. Pour chaque message de $name, relève ce qu'il y dit " +
+            "de durable sur lui et sa vie : identité, âge, ville, travail, études, proches, animaux, goûts, loisirs, " +
+            "projets, santé, habitudes.\n" +
+            "Écris un fait par ligne : le nom de la note, « : », puis le fait.\n" +
+            "- La note est « ${Note.ME_TITLE} » pour ce qui concerne $name lui-même. Un proche, un animal ou un sujet à part " +
+            "a sa propre note : son nom, puis son type entre parenthèses (${TAGS.joinToString(", ")}).\n" +
+            "- Le fait est une phrase courte et complète, à la troisième personne, fidèle à ses mots, sans commentaire.\n" +
+            "- Note seulement ce que dit ce message : n'invente rien, ne déduis rien.\n" +
+            "- Ignore ce qui ne dure pas (humeur, fatigue, faim, repas, météo, programme du jour), ses questions, " +
+            "et ce que dit Axo.\n" +
+            "- S'il n'y a rien de durable, écris : $NOTHING",
+        examples = listOf(
+            readPrompt("Je suis infirmier de nuit à Rennes, du coup je dors souvent le matin.", false, null) to
+                "${Note.ME_TITLE} : $name est infirmier de nuit à Rennes.\n${Note.ME_TITLE} : $name dort souvent le matin.",
+            // Étape 2 : un fait qui ressemble au nouveau, mais toujours vrai.
+            replacePrompt("$name est infirmier de nuit à Rennes.", Note.ME_TITLE, listOf(Fact("$name a grandi à Rennes."))) to NOTHING,
+            readPrompt("Je suis crevé, je crois que je vais me commander une pizza ce soir.", false, null) to NOTHING,
+            readPrompt("Mon chien Rocky a 5 ans et il a peur de l'aspirateur.", false, null) to
+                "Rocky (animal) : Rocky est le chien de $name, il a 5 ans.\nRocky (animal) : Rocky a peur de l'aspirateur.",
+            readPrompt("La montagne, sans hésiter.", false, "Tu préfères la mer ou la montagne ?") to
+                "${Note.ME_TITLE} : $name préfère la montagne à la mer.",
+            readPrompt("Mon meilleur ami Karim part vivre au Canada en septembre.", false, null) to
+                "Karim (personne) : Karim est le meilleur ami de $name.\nKarim (personne) : Karim part vivre au Canada en septembre.",
+            readPrompt("Tu crois qu'il va faire beau ce week-end ?", false, null) to NOTHING,
+            readPrompt("J'ai arrêté le foot, maintenant je fais de la boxe deux fois par semaine.", false, null) to
+                "${Note.ME_TITLE} : $name fait de la boxe deux fois par semaine.\n${Note.ME_TITLE} : $name a arrêté le foot.",
+            // Il ne joue plus au foot, mais il peut toujours le regarder.
+            replacePrompt(
+                "$name a arrêté le foot.",
+                Note.ME_TITLE,
+                listOf(Fact("$name regarde le foot à la télé."), Fact("$name joue au foot le samedi.")),
+            ) to "2",
+            readPrompt("ma carte de bus expire en mars", true, null) to "${Note.ME_TITLE} : La carte de bus de $name expire en mars.",
+        ),
+    )
+
+    /** Le message à lire, tel que le modèle le voit. [question] : celle d'Axo, pour une réponse courte. */
+    fun readPrompt(message: String, forced: Boolean, question: String?): String = when {
+        forced -> "$name te demande de retenir : « $message »"
+        question != null -> "Axo lui a demandé : « $question »\nMessage de $name : « $message »"
+        else -> "Message de $name : « $message »"
     }
 
-    fun extractGrammar(forced: Boolean): String {
-        val fact = "fact ::= \"- ${gbnf(name)} \" [^\\n]+ \"\\n\"\n"
-        return if (forced) "root ::= fact | fact fact | fact fact fact\n$fact"
-        else "root ::= \"aucun\" | fact | fact fact | fact fact fact\n$fact"
+    fun readGrammar(forced: Boolean): String {
+        val lines = "line (\"\\n\" line)? (\"\\n\" line)?"
+        return "root ::= " + (if (forced) lines else "$NOTHING_RULE | $lines") + "\n" +
+            "line ::= note \" : \" fact\n" +
+            "note ::= \"${gbnf(Note.ME_TITLE)}\" | name \" (\" tag \")\"\n" +
+            "name ::= [$UPPER] [^\\n():«»\"*#_\\[\\]]{0,$MAX_TITLE_CHARS}\n" +
+            "tag ::= ${TAGS.joinToString(" | ") { "\"${gbnf(it)}\"" }}\n" +
+            // Pas de commentaire : ni « : », ni parenthèses, ni tirets longs, ni mise en forme.
+            "fact ::= [${UPPER}0-9] [^\\n:()«»\"*#_\\[\\]–—]{3,$MAX_FACT_CHARS} \".\"\n"
     }
 
-    /** Les lignes complètes « - Matteo … », remises au propre. */
-    fun parseFacts(raw: String): List<String> =
-        raw.split('\n').dropLast(1)
-            .map { it.trim().removePrefix("-").trim() }
-            .filter { it.startsWith("$name ") }
-            .map(::tidy)
-            .filter { TextMatch.words(it).isNotEmpty() }
-            .distinct()
+    /** Une ligne lue : la note (null pour « Moi »), son type, et le fait. */
+    data class Line(val note: String?, val tag: String?, val fact: String)
+
+    /** Les lignes complètes « Note : fait. », remises au propre. */
+    fun parseLines(raw: String): List<Line> = raw.split('\n').mapNotNull { l ->
+        val m = LINE.matchEntire(l.trim()) ?: return@mapNotNull null
+        val fact = m.groupValues[4].trim()
+        // Une ligne coupée par la limite de tokens n'a pas son point final.
+        if (!fact.endsWith('.')) return@mapNotNull null
+        val tidy = tidy(fact)
+        if (TextMatch.words(tidy).isEmpty()) return@mapNotNull null
+        if (m.groupValues[1].isNotEmpty()) Line(null, null, tidy) else Line(m.groupValues[2].trim(), m.groupValues[3].trim(), tidy)
+    }
 
     private fun tidy(fact: String): String {
         var t = fact.replace(Regex("\\s+"), " ").trim().trim('"', '«', '»', ' ')
         if (t.length > MAX_FACT_CHARS) t = t.take(MAX_FACT_CHARS).substringBeforeLast(' ').trimEnd(',', ';', ' ') + "…"
         if (t.last() !in ".!?…") t += "."
-        return t
+        return t.replaceFirstChar { it.uppercaseChar() }
+    }
+
+    /**
+     * Un fait à garder : il reprend au moins un mot du message ([source], avec la question d'Axo), ne
+     * parle pas d'Axo, n'est pas une supposition, et ne décrit pas un moment qui passe (sauf « retiens »).
+     */
+    fun keep(fact: String, source: Set<String>, forced: Boolean): Boolean {
+        val words = TextMatch.words(fact)
+        if (words.none { it in source } || words.all { it in GENERIC }) return false
+        val plain = " " + TextMatch.allWords(fact).joinToString(" ") + " "
+        if (HEDGES.any { plain.contains(" $it ") } || plain.contains(" axo ")) return false
+        return forced || PASSING.none { plain.contains(" $it ") }
+    }
+
+    /** La question d'Axo juste avant, quand le message y répond en peu de mots. */
+    fun questionBefore(message: String, previousReply: String): String? {
+        if (TextMatch.allWords(message).size > SHORT_ANSWER_WORDS) return null
+        val reply = previousReply.trim()
+        val end = reply.lastIndexOf('?')
+        if (end < 0) return null
+        val start = reply.substring(0, end).indexOfLast { it in ".!?…\n" } + 1
+        return reply.substring(start, end + 1).trim().takeLast(MAX_QUESTION_CHARS).trim().takeIf { it.length > 1 }
     }
 
     /** Deux faits presque pareils dans la même réponse : un seul. */
-    private fun dedupe(facts: List<String>): List<String> {
-        val out = ArrayList<String>()
-        for (f in facts) {
-            val w = TextMatch.words(f)
-            if (out.none { coverage(w, TextMatch.words(it)) >= KNOWN }) out += f
+    private fun dedupe(lines: List<Line>): List<Line> {
+        val out = ArrayList<Line>()
+        for (l in lines) {
+            val w = TextMatch.words(l.fact)
+            if (out.none { coverage(w, TextMatch.words(it.fact)) >= KNOWN }) out += l
         }
         return out
     }
@@ -211,60 +300,27 @@ class NoteTaker(private val name: String = USER_NAME) {
     /** Le nouveau fait dit tout ce que disait l'ancien, et plus. */
     private fun refines(new: Set<String>, old: Set<String>): Boolean = coverage(old, new) >= SUPERSEDE && new.any { it !in old }
 
-    // --- Étape 2 : la note de chaque fait ---
+    // --- La note de chaque fait ---
 
     /** Où ranger un fait : une note existante ([id]), ou une nouvelle note (id null) avec son étiquette. */
     data class Target(val id: String?, val title: String, val tag: String?)
 
-    /** « Moi », puis les notes qui ressemblent le plus aux faits. */
-    fun candidates(facts: List<String>, notes: List<Note>): List<Target> {
-        val words = facts.flatMap { TextMatch.words(it) }.toSet()
-        val others = notes.filter { !it.isMe }
-            .map { n -> n to TextMatch.similarity(words, TextMatch.words(n.title) + n.facts.flatMap { TextMatch.words(it.text) }) }
-            .filter { it.second > 0.0 }
-            .sortedByDescending { it.second }
-            .take(MAX_CANDIDATES)
-            .map { Target(it.first.id, it.first.title, null) }
-        return listOf(Target(Note.ME_ID, Note.ME_TITLE, null)) + others
-    }
-
-    fun placePrompt(candidates: List<Target>): String {
-        val others = candidates.filter { it.id != Note.ME_ID }
-        return "Range chacun de ces faits dans une note de ton Cerveau, dans l'ordre.\n" +
-            "« ${Note.ME_TITLE} » : $name lui-même (âge, ville, métier, études, caractère, goûts, santé).\n" +
-            (if (others.isEmpty()) "Pas encore d'autre note.\n" else "Autres notes : ${others.joinToString(", ") { "« ${it.title} »" }}.\n") +
-            "Un proche, un animal, un projet ou un sujet précis a sa propre note : reprends-la si elle existe, " +
-            "sinon crée-la, avec un titre court (son nom, ou un à trois mots)."
-    }
-
-    fun placeGrammar(count: Int, candidates: List<Target>): String {
-        val root = (1..count).joinToString(" ") { "\"$it. \" choice \"\\n\"" }
-        val choices = candidates.joinToString(" | ") { "\"${gbnf(it.title)}\"" }
-        val tags = TAGS.joinToString(" | ") { "\"${gbnf(it)}\"" }
-        return "root ::= $root\n" +
-            "choice ::= $choices | \"$NEW_NOTE\" title \" (\" tag \")\"\n" +
-            "title ::= [^\\n()]+\n" +
-            "tag ::= $tags\n"
-    }
-
-    /** Une cible par fait (null si la ligne est illisible). */
-    fun parsePlacement(raw: String, count: Int, candidates: List<Target>, notes: List<Note>): List<Target?> {
-        val lines = raw.split('\n')
-        return (1..count).map { i ->
-            val line = lines.firstOrNull { it.startsWith("$i. ") }?.removePrefix("$i. ")?.trim() ?: return@map null
-            candidates.firstOrNull { it.title == line }
-                ?: NEW_LINE.matchEntire(line)?.let { m -> newTarget(m.groupValues[1], m.groupValues[2], notes) }
-        }
+    fun target(line: Line, notes: List<Note>): Target {
+        val title = line.note ?: return Target(Note.ME_ID, Note.ME_TITLE, null)
+        return newTarget(title, line.tag.orEmpty(), notes)
     }
 
     private fun newTarget(rawTitle: String, tag: String, notes: List<Note>): Target {
         val title = cleanTitle(rawTitle)
         val folded = TextMatch.fold(title)
-        if (TextMatch.words(title).isEmpty() || folded == TextMatch.fold(Note.ME_TITLE) || folded == TextMatch.fold(name)) {
+        val words = TextMatch.words(title)
+        if (words.isEmpty() || folded == TextMatch.fold(Note.ME_TITLE) || folded == TextMatch.fold(name)) {
             return Target(Note.ME_ID, Note.ME_TITLE, null)
         }
-        // Une note de ce nom existe déjà : on la complète.
+        // Une note de ce nom existe déjà (« Léa » pour « Ma sœur Léa ») : on la complète.
         notes.firstOrNull { TextMatch.fold(it.title) == folded }?.let { return Target(it.id, it.title, null) }
+        notes.firstOrNull { n -> !n.isMe && TextMatch.words(n.title).let { it.isNotEmpty() && words.containsAll(it) } }
+            ?.let { return Target(it.id, it.title, null) }
         return Target(null, title, tag.takeIf { it in TAGS })
     }
 
@@ -274,28 +330,47 @@ class NoteTaker(private val name: String = USER_NAME) {
         return t.replaceFirstChar { it.titlecase() }
     }
 
-    // --- Étape 3 : un fait devenu faux ---
+    // --- Étape 2 : un fait devenu faux ---
 
     fun replacePrompt(fact: String, noteTitle: String, similar: List<Fact>): String =
         "Nouveau fait : « $fact »\n" +
             "Déjà noté dans « $noteTitle » :\n" +
             similar.withIndex().joinToString("\n") { (i, f) -> "${i + 1}. ${f.text}" } + "\n" +
-            "Le nouveau fait rend-il l'un d'eux faux, parce que la situation a changé ? Réponds par son numéro, sinon : aucun"
+            "Le nouveau fait rend-il l'un d'eux faux, parce que la situation a changé ? Réponds par son numéro, sinon : $NOTHING"
 
-    fun replaceGrammar(count: Int): String = "root ::= \"aucun\"" + (1..count).joinToString("") { " | \"$it\"" } + "\n"
+    fun replaceGrammar(count: Int): String = "root ::= $NOTHING_RULE" + (1..count).joinToString("") { " | \"$it\"" } + "\n"
 
     companion object {
-        /** Tokens réservés pour toutes les étapes d'un échange (consignes et réponses). */
-        const val RESERVE_TOKENS = 1024
-        const val EXTRACT_TOKENS = 120
-        const val PLACE_TOKENS_PER_FACT = 16
+        /** Tokens écrits au plus pour les faits d'un message (trois lignes). */
+        const val READ_TOKENS = 120
         const val MAX_MESSAGE_CHARS = 600
-        const val MAX_FACT_CHARS = 180
-        const val MAX_TITLE_CHARS = 40
-        const val MAX_CANDIDATES = 5
+        const val MAX_FACT_CHARS = 150
+        const val MAX_TITLE_CHARS = 30
+        const val MAX_QUESTION_CHARS = 160
         const val MAX_SIMILAR = 3
-        private const val NEW_NOTE = "nouvelle note : "
-        private val NEW_LINE = Regex("^nouvelle note : (.+) \\(([^()]+)\\)$")
+
+        /** Jusqu'à ce nombre de mots, le message peut être la réponse à une question d'Axo. */
+        const val SHORT_ANSWER_WORDS = 12
+        const val NOTHING = "aucun"
+
+        /** « aucun », ou « Aucun » si le modèle met une majuscule en début de réponse. */
+        private const val NOTHING_RULE = "\"aucun\" | \"Aucun\""
+        private const val UPPER = "A-ZÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸŒÆ"
+        private val LINE = Regex("^(?:(Moi)|(.+?) \\(([^()]+)\\)) : (.+)$")
+
+        /** Mots qui ne disent rien à eux seuls (« Matteo s'appelle Matteo. »). */
+        private val GENERIC = setOf("appelle", "nom", "prenom", "dit", "parle", "raconte", "explique", "message")
+
+        /** Une supposition ou un commentaire, pas un fait. */
+        private val HEDGES = listOf(
+            "semble", "semblent", "sembler", "probablement", "peut etre", "sans doute", "apparemment", "visiblement",
+            "mentionne", "mentionnee", "mentionnes", "mentionnees", "mention", "precise pas", "non precise", "inconnu", "inconnue",
+        )
+
+        /** Ce qui ne dure pas. */
+        private val PASSING = listOf(
+            "ce soir", "ce matin", "cet apres midi", "cette nuit", "aujourd hui", "demain", "tout a l heure", "a faim", "se demande",
+        )
 
         /** Part d'un nouveau fait déjà dite par un fait noté : au-delà, rien de neuf. */
         const val KNOWN = 0.65

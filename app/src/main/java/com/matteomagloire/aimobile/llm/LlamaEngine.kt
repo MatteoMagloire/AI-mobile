@@ -41,6 +41,20 @@ class LlamaEngine {
 
     data class SavedSession(val bytes: Long, val systemPromptTokens: Int)
 
+    /**
+     * Mesures d'un travail de fond : consignes lues (seulement la première fois), messages lus,
+     * réponses écrites, et nombre d'étapes.
+     */
+    data class TaskStats(
+        val prefixTokens: Int,
+        val prefixMs: Double,
+        val promptTokens: Int,
+        val promptMs: Double,
+        val genTokens: Int,
+        val genMs: Double,
+        val steps: Int,
+    )
+
     // llama.cpp n'est pas thread-safe : les appels natifs passent un par un, sur un seul thread,
     // et le verrou empêche une opération de s'intercaler au milieu d'une réponse.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -182,17 +196,20 @@ class LlamaEngine {
     }.flowOn(llamaThread)
 
     /**
-     * Travail de fond sur la conversation (prise de notes) : [beginTask], des étapes ([taskStep]),
-     * puis [endTask], qui retire tout ce que le travail a ajouté. La conversation reprend ensuite
-     * exactement où elle en était, sans rien relire. Entre les deux, rien d'autre ne doit toucher à la
-     * conversation : les appelants passent par [SessionCache.use].
+     * Travail de fond (prise de notes), dans un contexte à part : la conversation n'est jamais
+     * touchée. [beginTask] avec ses consignes, des étapes ([taskStep]), puis [endTask], qui retire tout
+     * ce que le travail a ajouté après les consignes. Les consignes restent en mémoire : un travail
+     * suivant avec les mêmes ne les relit pas.
      *
-     * [reserve] : tokens nécessaires au travail. False s'il ne peut pas commencer.
+     * [instructions] : le prompt système, puis des exemples, message et réponse tour à tour.
+     * [epoch] : [taskEpoch] lu avant de décider de commencer ; si [abortTask] a été appelé depuis, le
+     * travail ne commence pas. False s'il ne peut pas commencer (ou a été interrompu en lisant ses
+     * consignes : la lecture reprendra là où elle s'est arrêtée).
      */
-    suspend fun beginTask(reserve: Int): Boolean = locked {
+    suspend fun beginTask(instructions: List<String>, epoch: Int): Boolean = locked {
         if (_state.value !is State.Ready) return@locked false
-        val code = LlamaNative.beginTask(reserve)
-        if (code != 0) Log.w(TAG, "travail de fond refusé (code $code)")
+        val code = LlamaNative.beginTask(instructions.toTypedArray(), epoch)
+        if (code != 0) Log.w(TAG, "travail de fond pas commencé (code $code)")
         code == 0
     }
 
@@ -204,10 +221,20 @@ class LlamaEngine {
         text
     }
 
-    /** False si la conversation n'a pas pu être remise en état : elle est alors vide, à reprendre. */
+    /** False si le contexte de travail a dû être vidé : les consignes seront relues au prochain travail. */
     suspend fun endTask(): Boolean = locked { _state.value !is State.Ready || LlamaNative.endTask() == 0 }
 
-    /** Arrête au plus vite l'étape en cours du travail de fond, sans attendre : appelable à tout moment. */
+    /** Mesures du dernier travail de fond. */
+    suspend fun taskStats(): TaskStats = locked {
+        if (_state.value !is State.Ready) return@locked TaskStats(0, 0.0, 0, 0.0, 0, 0.0, 0)
+        val s = LlamaNative.taskStats()
+        TaskStats(s[0].toInt(), s[1] / 1000.0, s[2].toInt(), s[3] / 1000.0, s[4].toInt(), s[5] / 1000.0, s[6].toInt())
+    }
+
+    /** Époque des interruptions, à lire avant de commencer un travail de fond (voir [beginTask]). */
+    fun taskEpoch(): Int = if (initialized) LlamaNative.abortEpoch() else 0
+
+    /** Arrête au plus vite le travail de fond en cours, ou celui qui allait commencer : appelable à tout moment. */
     fun abortTask() {
         if (initialized) LlamaNative.abortTask()
     }
