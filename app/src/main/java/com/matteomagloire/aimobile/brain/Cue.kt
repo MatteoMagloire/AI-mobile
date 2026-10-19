@@ -17,7 +17,10 @@ enum class Cue(val text: String) {
      * La météo ou les infos : « pas de soleil, un peu de pluie », « le vent va être fort ». Sans « tu ne
      * vois pas dehors », il restait « juste le vent qui grésille dans la rue ».
      */
-    OFFLINE("tu n'as pas internet et tu ne vois pas dehors : tu ne connais ni la météo ni les infos, n'en invente rien"),
+    OFFLINE(
+        "tu n'as pas internet et tu ne vois pas dehors : tu ne connais ni la météo ni les infos. " +
+            "S'il te le demande, dis-lui simplement que tu ne sais pas, sans rien inventer",
+    ),
 
     /**
      * Sa santé, celle d'un proche ou d'un animal : Pixel ne mangeait plus, « c'est bizarre, mais pas
@@ -30,7 +33,7 @@ enum class Cue(val text: String) {
     ;
 
     companion object {
-        // Sur le texte replié (minuscules, sans accents). Aussi pour « il fait beau » : rien à inventer non plus.
+        // Sur le texte replié (minuscules, sans accents). Aussi pour « il fait beau » : la consigne ne joue que s'il demande.
         private val OFFLINE_SIGNS = Regex(
             "\\bmeteo\\b|\\bquel temps\\b|\\bbeau temps\\b|\\bil (va )?(faire|fera|fait) (beau|chaud|froid|moche|gris|doux|bon)\\b|" +
                 "\\bpleuvoir\\b|\\bil (va )?pleu(t|vra)\\b|\\bneiger\\b|\\bil (va )?neige\\b|\\borages?\\b|\\bcanicule\\b|" +
