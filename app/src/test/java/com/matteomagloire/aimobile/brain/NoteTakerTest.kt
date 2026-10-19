@@ -113,6 +113,9 @@ class NoteTakerTest {
         // « vit » et « habite » se ressemblent : la question est posée, sans les faits sans rapport.
         assertTrue(runner.prompts[1].contains("1. Matteo habite à Lyon."))
         assertFalse(runner.prompts[1].contains("23 ans"))
+        // Avec ce qu'il a dit : « déménagé » et « maintenant » montrent que la situation a changé.
+        assertTrue(runner.prompts[1], runner.prompts[1].startsWith("Matteo a dit : « Bon, finalement j'ai déménagé : maintenant je vis à Paris. »\nNouveau fait : Matteo vit à Paris.\n"))
+        assertTrue(runner.prompts[1].endsWith("Lequel de ces faits n'est plus vrai maintenant ? Réponds par son numéro, ou « aucun » s'ils sont tous encore vrais."))
         assertEquals("root ::= \"aucun\" | \"Aucun\" | \"1\"\n", runner.grammars[1])
     }
 
@@ -258,9 +261,9 @@ class NoteTakerTest {
         assertEquals(1 + 2 * taker.instructions.examples.size, messages.size)
         assertTrue(messages.first().startsWith("Tu tiens le carnet de notes d'Axo sur Matteo."))
         for ((prompt, answer) in taker.instructions.examples) {
-            if (prompt.startsWith("Nouveau fait")) {
+            if (prompt.contains("\nNouveau fait : ")) {
                 // Étape 2 : des faits que le code jugerait ressemblants, et un numéro de la liste ou « aucun ».
-                val fact = TextMatch.words(prompt.substringAfter("« ").substringBefore(" »"))
+                val fact = TextMatch.words(prompt.substringAfter("\nNouveau fait : ").substringBefore("\n"))
                 val listed = prompt.lines().filter { it.matches(Regex("\\d+\\. .+")) }.map { TextMatch.words(it.substringAfter(". ")) }
                 assertTrue(prompt, listed.isNotEmpty() && listed.all { TextMatch.similarity(fact, it) >= NoteTaker.SIMILAR })
                 assertTrue(answer, answer == NoteTaker.NOTHING || answer.toInt() in 1..listed.size)

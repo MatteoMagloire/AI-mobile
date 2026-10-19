@@ -15,11 +15,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.io.File
 
 class AiMobileApp : Application() {
 
     /** Un seul moteur pour toute l'app : le modèle reste chargé entre deux écrans. */
-    val engine by lazy { LlamaEngine() }
+    val engine by lazy { LlamaEngine(taskCacheDir = File(cacheDir, "notes-kv")) }
 
     /** Sessions du moteur enregistrées, pour reprendre la conversation sans tout relire. */
     val sessions by lazy { SessionCache(this) }

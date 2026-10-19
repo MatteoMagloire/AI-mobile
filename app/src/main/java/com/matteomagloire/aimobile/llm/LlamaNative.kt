@@ -33,6 +33,8 @@ internal object LlamaNative {
     external fun taskError(): Int
     external fun taskStats(): LongArray
     external fun endTask(): Int
+    external fun saveTaskPrefix(path: String): Long
+    external fun restoreTaskPrefix(path: String, expectedBytes: Long): Int
     external fun abortTask()
     external fun unload()
     external fun systemInfo(): String

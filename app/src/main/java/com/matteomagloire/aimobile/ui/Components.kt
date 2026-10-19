@@ -304,4 +304,6 @@ fun tokensPerSecond(tps: Double): String = "%.1f tok/s".format(Locale.FRANCE, tp
 
 fun gigabytes(bytes: Long): String = "%.1f Go".format(Locale.FRANCE, bytes / 1e9)
 
+fun megabytes(bytes: Long): String = "%.0f Mo".format(Locale.FRANCE, bytes / 1e6)
+
 fun celsius(c: Float): String = if (c.isNaN()) "?" else "%.1f °C".format(Locale.FRANCE, c)

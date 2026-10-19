@@ -81,7 +81,7 @@ sealed interface Reading {
  *
  * 1. Les faits : « aucun », ou une à trois lignes « Note : fait. », la note étant « Moi » ou celle
  *    d'un proche, d'un animal ou d'un sujet à part, avec son type.
- * 2. Seulement si la note contient un fait ressemblant : le nouveau le rend-il faux ?
+ * 2. Seulement si la note contient un fait ressemblant : lequel n'est plus vrai maintenant ?
  */
 class NoteTaker(private val name: String = USER_NAME) {
 
@@ -158,7 +158,7 @@ class NoteTaker(private val name: String = USER_NAME) {
                     .take(MAX_SIMILAR)
                 var replaces: String? = null
                 if (similar.isNotEmpty()) {
-                    val answer = runner.step(replacePrompt(line.fact, note!!.title, similar), replaceGrammar(similar.size), 4)
+                    val answer = runner.step(replacePrompt(message, line.fact, note!!.title, similar), replaceGrammar(similar.size), 4)
                     if (answer == null) currentCoroutineContext().ensureActive()
                     replaces = answer?.trim()?.toIntOrNull()?.let { similar.getOrNull(it - 1)?.text }
                 }
@@ -194,7 +194,12 @@ class NoteTaker(private val name: String = USER_NAME) {
             readPrompt("Je suis infirmier de nuit à Rennes, du coup je dors souvent le matin.", false, null) to
                 "${Note.ME_TITLE} : $name est infirmier de nuit à Rennes.\n${Note.ME_TITLE} : $name dort souvent le matin.",
             // Étape 2 : un fait qui ressemble au nouveau, mais toujours vrai.
-            replacePrompt("$name est infirmier de nuit à Rennes.", Note.ME_TITLE, listOf(Fact("$name a grandi à Rennes."))) to NOTHING,
+            replacePrompt(
+                "Je suis infirmier de nuit à Rennes, du coup je dors souvent le matin.",
+                "$name est infirmier de nuit à Rennes.",
+                Note.ME_TITLE,
+                listOf(Fact("$name a grandi à Rennes.")),
+            ) to NOTHING,
             readPrompt("Je suis crevé, je crois que je vais me commander une pizza ce soir.", false, null) to NOTHING,
             readPrompt("Mon chien Rocky a 5 ans et il a peur de l'aspirateur.", false, null) to
                 "Rocky (animal) : Rocky est le chien de $name, il a 5 ans.\nRocky (animal) : Rocky a peur de l'aspirateur.",
@@ -207,10 +212,20 @@ class NoteTaker(private val name: String = USER_NAME) {
                 "${Note.ME_TITLE} : $name fait de la boxe deux fois par semaine.\n${Note.ME_TITLE} : $name a arrêté le foot.",
             // Il ne joue plus au foot, mais il peut toujours le regarder.
             replacePrompt(
+                "J'ai arrêté le foot, maintenant je fais de la boxe deux fois par semaine.",
                 "$name a arrêté le foot.",
                 Note.ME_TITLE,
                 listOf(Fact("$name regarde le foot à la télé."), Fact("$name joue au foot le samedi.")),
             ) to "2",
+            readPrompt("J'ai changé de boulot : maintenant je travaille dans un restaurant.", false, null) to
+                "${Note.ME_TITLE} : $name travaille dans un restaurant.",
+            // La situation a changé : l'ancien fait n'est plus vrai.
+            replacePrompt(
+                "J'ai changé de boulot : maintenant je travaille dans un restaurant.",
+                "$name travaille dans un restaurant.",
+                Note.ME_TITLE,
+                listOf(Fact("$name travaille dans un supermarché.")),
+            ) to "1",
             readPrompt("ma carte de bus expire en mars", true, null) to "${Note.ME_TITLE} : La carte de bus de $name expire en mars.",
         ),
     )
@@ -332,11 +347,13 @@ class NoteTaker(private val name: String = USER_NAME) {
 
     // --- Étape 2 : un fait devenu faux ---
 
-    fun replacePrompt(fact: String, noteTitle: String, similar: List<Fact>): String =
-        "Nouveau fait : « $fact »\n" +
+    /** [message] : ce que l'utilisateur a dit, d'où vient [fact] (« j'ai déménagé », « maintenant »…). */
+    fun replacePrompt(message: String, fact: String, noteTitle: String, similar: List<Fact>): String =
+        "$name a dit : « ${message.take(MAX_SAID_CHARS)} »\n" +
+            "Nouveau fait : $fact\n" +
             "Déjà noté dans « $noteTitle » :\n" +
             similar.withIndex().joinToString("\n") { (i, f) -> "${i + 1}. ${f.text}" } + "\n" +
-            "Le nouveau fait rend-il l'un d'eux faux, parce que la situation a changé ? Réponds par son numéro, sinon : $NOTHING"
+            "Lequel de ces faits n'est plus vrai maintenant ? Réponds par son numéro, ou « $NOTHING » s'ils sont tous encore vrais."
 
     fun replaceGrammar(count: Int): String = "root ::= $NOTHING_RULE" + (1..count).joinToString("") { " | \"$it\"" } + "\n"
 
@@ -347,6 +364,9 @@ class NoteTaker(private val name: String = USER_NAME) {
         const val MAX_FACT_CHARS = 150
         const val MAX_TITLE_CHARS = 30
         const val MAX_QUESTION_CHARS = 160
+
+        /** Ce qu'il a dit, repris dans la question « plus vrai maintenant ? ». */
+        const val MAX_SAID_CHARS = 300
         const val MAX_SIMILAR = 3
 
         /** Jusqu'à ce nombre de mots, le message peut être la réponse à une question d'Axo. */
