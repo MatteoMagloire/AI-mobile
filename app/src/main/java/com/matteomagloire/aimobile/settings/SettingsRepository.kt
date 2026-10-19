@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.matteomagloire.aimobile.brain.Brain
 import com.matteomagloire.aimobile.llm.LlamaEngine
 import com.matteomagloire.aimobile.model.ModelCatalog
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,8 @@ data class Settings(
     val showSpeed: Boolean = false,
     /** Cœurs utilisés par le modèle (2 à 4) : moins de cœurs, moins de chauffe. */
     val threads: Int = LlamaEngine.DEFAULT_THREADS,
+    /** Une note ni ouverte ni utilisée depuis ce nombre de jours passe en veille. */
+    val dormantDays: Int = Brain.DEFAULT_DORMANT_DAYS,
 )
 
 /** Personnalité d'Axo (cahier des charges, « Base de ses instructions »). */
@@ -63,6 +66,7 @@ class SettingsRepository(private val context: Context) {
         val reasoningModel = stringPreferencesKey("reasoning_model")
         val showSpeed = booleanPreferencesKey("show_speed")
         val threads = intPreferencesKey("threads")
+        val dormantDays = intPreferencesKey("dormant_days")
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { it.toSettings() }
@@ -79,6 +83,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.reasoningModel] = next.reasoningModelId
             p[Keys.showSpeed] = next.showSpeed
             p[Keys.threads] = next.threads
+            p[Keys.dormantDays] = next.dormantDays
             p.storeSystemPrompt(next.systemPrompt)
         }
     }
@@ -103,6 +108,7 @@ class SettingsRepository(private val context: Context) {
                 ?: d.reasoningModelId,
             showSpeed = this[Keys.showSpeed] ?: d.showSpeed,
             threads = (this[Keys.threads] ?: d.threads).coerceIn(LlamaEngine.MIN_THREADS, LlamaEngine.MAX_THREADS),
+            dormantDays = this[Keys.dormantDays]?.takeIf { it in Brain.DORMANT_CHOICES } ?: d.dormantDays,
         )
     }
 }

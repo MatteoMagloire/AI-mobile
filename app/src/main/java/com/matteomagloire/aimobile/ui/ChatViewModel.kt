@@ -16,6 +16,7 @@ import com.matteomagloire.aimobile.brain.Forgetting
 import com.matteomagloire.aimobile.brain.JournalEntry
 import com.matteomagloire.aimobile.brain.ModelAccess
 import com.matteomagloire.aimobile.brain.Note
+import com.matteomagloire.aimobile.brain.NoteLinks
 import com.matteomagloire.aimobile.brain.NoteStore
 import com.matteomagloire.aimobile.brain.NoteTaker
 import com.matteomagloire.aimobile.brain.Reading
@@ -59,6 +60,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -106,6 +108,8 @@ sealed interface BrainChip {
 
 data class BrainUi(
     val notes: List<Note> = emptyList(),
+    /** Les liens entre ces notes, calculés à chaque changement. */
+    val links: NoteLinks.Links = NoteLinks.Links.EMPTY,
     val journal: List<JournalEntry> = emptyList(),
     /** Axo prend des notes en ce moment. */
     val noting: Boolean = false,
@@ -194,7 +198,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             settingsRepo.settings.map { it.threads }.distinctUntilChanged().collect { engine.setThreads(it) }
         }
         watchDownloads()
-        viewModelScope.launch { brain.store.notes.collect { n -> updateBrain { it.copy(notes = n) } } }
+        // Les liens se calculent à part du fil de l'écran : quelques millisecondes pour 500 notes.
+        viewModelScope.launch {
+            brain.store.notes.map { n -> n to NoteLinks.links(n) }.flowOn(Dispatchers.Default).collect { (n, l) ->
+                updateBrain { it.copy(notes = n, links = l) }
+            }
+        }
         viewModelScope.launch { brain.store.journal.collect { j -> updateBrain { it.copy(journal = j) } } }
         viewModelScope.launch { brain.noting.collect { v -> updateBrain { it.copy(noting = v) } } }
         viewModelScope.launch { brain.noted.collect { e -> updateBrain { it.copy(chip = BrainChip.Noted(e)) } } }
@@ -325,7 +334,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         generation = viewModelScope.launch {
             // Souvenirs et « oublie… » : quelques millisecondes, sans le modèle.
             val prepared = try {
-                brain.prepare(message, now, recentMemories, startOfSession)
+                brain.prepare(message, now, recentMemories, startOfSession, s.settings.dormantDays)
             } catch (e: Exception) {
                 Brain.Prepared("")
             }
@@ -838,6 +847,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openNote(id: String) {
         viewModelScope.launch { brain.store.markOpened(id) }
+    }
+
+    /** Les notes reliées à la main à [noteId], par leur titre. */
+    fun setLinks(noteId: String, titles: List<String>) {
+        viewModelScope.launch { brain.store.setLinks(noteId, titles) }
     }
 
     fun rewriteNote(id: String, markdown: String) {

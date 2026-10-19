@@ -117,8 +117,27 @@ class NoteStore(
     }
 
     /**
+     * Notes dont Axo s'est servi pour répondre (date « utilisee ») : une note en veille redevient
+     * active. Écrit au plus une fois par jour et par note.
+     */
+    suspend fun markUsed(ids: Collection<String>) = locked {
+        val day = today()
+        val used = ids.toSet()
+        if (_notes.value.any { it.id in used && it.used != day }) {
+            replaceNotes { notes -> notes.map { if (it.id in used && it.used != day) it.copy(used = day) else it } }
+        }
+    }
+
+    /** Les notes reliées à la main à [id] (rubrique « ## Liens »), par leur titre. */
+    suspend fun setLinks(id: String, titles: List<String>) = locked {
+        val clean = titles.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { TextMatch.fold(it) }
+        replaceNotes { notes -> notes.map { if (it.id == id && it.links != clean) it.copy(links = clean, modified = today()) else it } }
+    }
+
+    /**
      * Une note réécrite à la main (vue « Brut ») : relue telle quelle. Si son titre change, le fichier
-     * garde son nom ; sans titre, elle garde l'ancien. Null si la note n'existe plus.
+     * garde son nom, et les liens écrits à la main vers elle suivent ; sans titre, elle garde l'ancien.
+     * Null si la note n'existe plus.
      */
     suspend fun rewrite(id: String, markdown: String): Note? = locked {
         val old = _notes.value.firstOrNull { it.id == id } ?: return@locked null
@@ -126,7 +145,17 @@ class NoteStore(
         val hasTitle = markdown.lines().any { it.trim().startsWith("# ") }
         val title = if (old.isMe || !hasTitle) old.title else parsed.title
         val saved = parsed.copy(title = title, created = old.created, modified = today())
-        replaceNotes { notes -> notes.map { if (it.id == id) saved else it } }
+        val renamed = TextMatch.fold(title) != TextMatch.fold(old.title)
+        replaceNotes { notes ->
+            notes.map { n ->
+                when {
+                    n.id == id -> saved
+                    renamed && n.links.any { TextMatch.fold(it) == TextMatch.fold(old.title) } ->
+                        n.copy(links = n.links.map { if (TextMatch.fold(it) == TextMatch.fold(old.title)) title else it })
+                    else -> n
+                }
+            }
+        }
         saved
     }
 
@@ -241,7 +270,9 @@ class NoteStore(
         val note = _notes.value.firstOrNull { it.id == id } ?: return@locked
         if (note.isMe) {
             // « Moi » reste, vidée.
-            replaceNotes { notes -> notes.map { if (it.isMe) it.copy(facts = emptyList(), before = emptyList(), extra = "", modified = today()) else it } }
+            replaceNotes { notes ->
+                notes.map { if (it.isMe) it.copy(facts = emptyList(), before = emptyList(), links = emptyList(), extra = "", modified = today()) else it }
+            }
         } else {
             replaceNotes { notes -> notes.filter { it.id != id } }
         }

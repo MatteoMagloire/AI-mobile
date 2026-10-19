@@ -37,4 +37,14 @@ object NoteFilter {
         val capital = t.replaceFirstChar { it.titlecase(Locale.FRENCH) }
         return if (capital.last() in ".!?…") capital else "$capital."
     }
+
+    /** Comme [pretty], pour un texte avec des liens : les liens restent à leur place. */
+    fun pretty(linked: NoteLinks.Linked): NoteLinks.Linked {
+        val t = linked.text
+        if (t.isBlank() || t.first().isWhitespace() || t.last().isWhitespace()) return linked
+        // Une majuscule qui s'écrirait en deux lettres décalerait les liens : on la laisse.
+        val first = t.first().titlecase(Locale.FRENCH).takeIf { it.length == 1 } ?: t.first().toString()
+        val capital = first + t.substring(1)
+        return linked.copy(text = if (capital.last() in ".!?…") capital else "$capital.")
+    }
 }

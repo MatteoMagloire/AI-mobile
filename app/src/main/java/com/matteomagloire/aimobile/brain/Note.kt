@@ -17,13 +17,26 @@ data class Note(
     val created: LocalDate,
     val modified: LocalDate,
     val opened: LocalDate? = null,
+    /** Dernier jour où Axo s'en est servi pour répondre. */
+    val used: LocalDate? = null,
     val facts: List<Fact> = emptyList(),
     /** Ce qui était vrai avant : faits remplacés par un plus récent. */
     val before: List<Fact> = emptyList(),
+    /** Notes reliées à la main (rubrique « ## Liens »), par leur titre. */
+    val links: List<String> = emptyList(),
     /** Texte écrit à la main hors des faits, gardé tel quel. */
     val extra: String = "",
 ) {
     val isMe: Boolean get() = id == ME_ID
+
+    /** Dernier jour où quelqu'un s'en est occupé : créée, modifiée, ouverte ou utilisée par Axo. */
+    val lastActive: LocalDate get() = listOfNotNull(created, modified, opened, used).max()
+
+    /**
+     * En veille (mémoire froide) : ni toi ni Axo ne l'avez touchée depuis plus de [days] jours. Rien
+     * n'est effacé, Axo puise d'abord dans les autres. « Moi » ne s'endort jamais.
+     */
+    fun isDormant(today: LocalDate, days: Int): Boolean = !isMe && lastActive.plusDays(days.toLong()) < today
 
     companion object {
         /** La note « Moi » : ce qu'Axo sait de l'utilisateur lui-même. */
@@ -51,13 +64,19 @@ data class Note(
  *
  * ## Avant
  * - 2026-10-12 → 2026-10-19 · Pixel dormait dans le salon.
+ *
+ * ## Liens
+ * - [[Léa]]
  * ```
  *
  * Une note retouchée à la main se relit aussi : une ligne sans date est un fait, le reste est gardé.
+ * « utilisee » dans l'en-tête : dernier jour où Axo s'en est servi. « ## Liens » : les notes reliées à
+ * la main, en plus de celles que le texte nomme.
  */
 object NoteFormat {
     private const val FACTS = "## Faits"
     private const val BEFORE = "## Avant"
+    private const val LINKS = "## Liens"
     private val BULLET = Regex("""^[-*](\s+|$)""")
     private val DATED = Regex("""^(\d{4}-\d{2}-\d{2})?\s*(?:(?:→|->)\s*(\d{4}-\d{2}-\d{2}))?\s*·\s*(.*)$""")
 
@@ -67,6 +86,7 @@ object NoteFormat {
         append("creee: ${note.created}\n")
         append("modifiee: ${note.modified}\n")
         note.opened?.let { append("ouverte: $it\n") }
+        note.used?.let { append("utilisee: $it\n") }
         append("---\n")
         append("# ${note.title}\n\n")
         // Le texte libre juste sous le titre : relu tel quel, sans être pris pour des faits.
@@ -76,6 +96,10 @@ object NoteFormat {
         if (note.before.isNotEmpty()) {
             append("\n$BEFORE\n")
             note.before.forEach { append("- ${line(it)}\n") }
+        }
+        if (note.links.isNotEmpty()) {
+            append("\n$LINKS\n")
+            note.links.forEach { append("- [[$it]]\n") }
         }
     }
 
@@ -107,8 +131,9 @@ object NoteFormat {
         var title: String? = null
         val facts = mutableListOf<Fact>()
         val before = mutableListOf<Fact>()
+        val links = mutableListOf<String>()
         val extra = StringBuilder()
-        // 0 : hors section, 1 : faits, 2 : avant, 3 : autre section (gardée telle quelle).
+        // 0 : hors section, 1 : faits, 2 : avant, 3 : autre section (gardée telle quelle), 4 : liens.
         var section = 0
         for (l in lines.drop(start)) {
             val t = l.trim()
@@ -118,11 +143,13 @@ object NoteFormat {
                     section = when (TextMatch.fold(t.removePrefix("## ").trim())) {
                         "faits" -> 1
                         "avant" -> 2
+                        "liens" -> 4
                         else -> 3
                     }
                     if (section == 3) extra.append(l).append('\n')
                 }
                 section == 1 || section == 2 -> parseFact(t)?.let { if (section == 1) facts += it else before += it }
+                section == 4 -> parseLink(t)?.let { if (links.none { l -> TextMatch.fold(l) == TextMatch.fold(it) }) links += it }
                 t.isNotEmpty() || extra.isNotEmpty() -> extra.append(l).append('\n')
             }
         }
@@ -133,10 +160,19 @@ object NoteFormat {
             created = date(meta["creee"]) ?: today,
             modified = date(meta["modifiee"]) ?: today,
             opened = date(meta["ouverte"]),
+            used = date(meta["utilisee"]),
             facts = facts,
             before = before,
+            links = links,
             extra = extra.toString().trim(),
         )
+    }
+
+    /** Une ligne de « ## Liens » : « - [[Léa]] », ou simplement « - Léa ». */
+    private fun parseLink(line: String): String? {
+        val t = line.replace(BULLET, "").trim()
+        val inner = NoteLinks.WIKI.find(t)?.groupValues?.get(1) ?: t
+        return NoteLinks.target(inner).takeIf { it.isNotEmpty() }
     }
 
     /** Un fait, avec ou sans date (« - 2026-10-19 · texte »). */

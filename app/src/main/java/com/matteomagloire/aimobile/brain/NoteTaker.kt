@@ -352,7 +352,7 @@ class NoteTaker(private val name: String = USER_NAME) {
         "$name a dit : « ${message.take(MAX_SAID_CHARS)} »\n" +
             "Nouveau fait : $fact\n" +
             "Déjà noté dans « $noteTitle » :\n" +
-            similar.withIndex().joinToString("\n") { (i, f) -> "${i + 1}. ${f.text}" } + "\n" +
+            similar.withIndex().joinToString("\n") { (i, f) -> "${i + 1}. ${NoteLinks.plain(f.text)}" } + "\n" +
             "Lequel de ces faits n'est plus vrai maintenant ? Réponds par son numéro, ou « $NOTHING » s'ils sont tous encore vrais."
 
     fun replaceGrammar(count: Int): String = "root ::= $NOTHING_RULE" + (1..count).joinToString("") { " | \"$it\"" } + "\n"

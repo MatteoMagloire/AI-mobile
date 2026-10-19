@@ -169,6 +169,29 @@ class NoteStoreTest {
     }
 
     @Test
+    fun usedNotesAndHandMadeLinks() = runBlocking {
+        val s = store()
+        s.record(Exchange(2_000, "m"), "m", noted, 0)
+        s.markUsed(listOf("pixel", "absente"))
+        assertEquals(day, s.notes.value.first { it.id == "pixel" }.used)
+        assertNull(s.notes.value.first { it.isMe }.used)
+        // Déjà utilisée aujourd'hui : rien n'est réécrit.
+        val file = File(dir, "notes/pixel.md")
+        file.setLastModified(1_000)
+        s.markUsed(listOf("pixel"))
+        assertEquals(1_000L, file.lastModified())
+        // Reliée à la main, puis renommée : le lien suit.
+        s.setLinks(Note.ME_ID, listOf("Pixel", " pixel ", ""))
+        assertEquals(listOf("Pixel"), s.notes.value.first { it.isMe }.links)
+        s.rewrite("pixel", "# Pixel le chat\n\n## Faits\n- Pixel est roux.\n")
+        assertEquals(listOf("Pixel le chat"), s.notes.value.first { it.isMe }.links)
+        assertEquals(s.notes.value, store().also { it.load() }.notes.value)
+        // Vider « Moi » retire aussi ses liens.
+        s.deleteNote(Note.ME_ID)
+        assertEquals(emptyList<String>(), s.notes.value.first { it.isMe }.links)
+    }
+
+    @Test
     fun readingAnExchange() = runBlocking {
         val s = store()
         s.load()

@@ -12,8 +12,20 @@ object Recall {
     const val MIN_SCORE = 2.0
     const val MAX_FACTS = 5
 
-    /** Les faits actuels les plus proches de [query], du plus pertinent au moins pertinent. */
-    fun search(notes: List<Note>, query: String, limit: Int = MAX_FACTS, exclude: Set<String> = emptySet()): List<Hit> {
+    /** Poids d'une note en veille : Axo puise d'abord dans les notes actives, sans oublier les autres. */
+    const val DORMANT_WEIGHT = 0.75
+
+    /**
+     * Les faits actuels les plus proches de [query], du plus pertinent au moins pertinent. Ceux des
+     * notes en veille ([dormant]) passent après les faits aussi pertinents des notes actives.
+     */
+    fun search(
+        notes: List<Note>,
+        query: String,
+        limit: Int = MAX_FACTS,
+        exclude: Set<String> = emptySet(),
+        dormant: Set<String> = emptySet(),
+    ): List<Hit> {
         val q = TextMatch.words(query)
         if (q.isEmpty()) return emptyList()
         // Les mots du titre comptent pour chaque fait de la note : « Pixel » rappelle tout ce qui le concerne.
@@ -24,17 +36,17 @@ object Recall {
         val df = HashMap<String, Int>()
         for ((_, _, words) in docs) for (w in words) df[w] = (df[w] ?: 0) + 1
         return docs.asSequence()
-            .filter { it.second.text !in exclude }
+            .filter { NoteLinks.plain(it.second.text) !in exclude }
             .map { (n, f, words) -> Hit(n, f, q.filter { it in words }.sumOf { TextMatch.idf(docs.size, df[it] ?: 1) }) }
             .filter { it.score >= MIN_SCORE }
-            .sortedWith(compareByDescending<Hit> { it.score }.thenByDescending { it.fact.date })
+            .sortedWith(compareByDescending<Hit> { if (it.note.id in dormant) it.score * DORMANT_WEIGHT else it.score }.thenByDescending { it.fact.date })
             .take(limit)
             .toList()
     }
 
     /** Les derniers faits de la note « Moi » (début de conversation, « qu'est-ce que tu sais de moi ? »). */
     fun aboutMe(notes: List<Note>, limit: Int, exclude: Set<String> = emptySet()): List<Fact> =
-        notes.firstOrNull { it.isMe }?.facts.orEmpty().filter { it.text !in exclude }.takeLast(limit).reversed()
+        notes.firstOrNull { it.isMe }?.facts.orEmpty().filter { NoteLinks.plain(it.text) !in exclude }.takeLast(limit).reversed()
 
     private val ABOUT_ME = Regex(
         "(tu te (souviens|rappelles)|te souviens|te rappelles|rappelle[- ]toi|tu sais (quoi|ce que|des choses|qui je|comment je|ou j)|" +
@@ -44,7 +56,7 @@ object Recall {
     /** Le message demande ce qu'Axo sait de lui. */
     fun asksAboutMe(message: String): Boolean = ABOUT_ME.containsMatchIn(TextMatch.fold(message))
 
-    /** Les faits déjà glissés dans [memories] (les messages récents) : inutile de les redonner. */
+    /** Les faits déjà glissés dans [memories] (les messages récents, sans les [[…]]) : inutile de les redonner. */
     fun alreadyGiven(memories: List<String>): Set<String> =
         memories.flatMap { block -> block.lines().filter { it.startsWith("- ") }.map { it.removePrefix("- ").trim() } }.toSet()
 
