@@ -42,7 +42,7 @@ enum class Cue(val text: String) {
      * jeu »). Au banc, sans ce rappel, il supposait quelque chose 7 fois sur 12 (« Toujours en train de
      * bosser sur ce projet de code bizarre ? ») ; avec, jamais : « Tu as déjà commencé ta journée ? ».
      */
-    HELLO("tu ne sais pas comment se passe sa journée : demande-lui"),
+    HELLO("tu ne sais rien de sa journée : demande-lui"),
     ;
 
     companion object {
