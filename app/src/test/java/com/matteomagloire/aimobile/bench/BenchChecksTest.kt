@@ -141,6 +141,7 @@ class BenchChecksTest {
                 "chat-malade" to setOf(Cue.HEALTH),
                 "corrige-par-matteo" to setOf(Cue.WHO),
                 "emojis-d-avant" to setOf(Cue.HELLO), "salut" to setOf(Cue.HELLO), "salut-sans-rien-savoir" to setOf(Cue.HELLO),
+                "salut-apres-longtemps" to setOf(Cue.HELLO),
             ),
             BENCH_CASES.associate { it.id to Cue.of(it.message) }.filterValues { it.isNotEmpty() },
         )

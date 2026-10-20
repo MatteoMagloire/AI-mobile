@@ -212,6 +212,10 @@ val BENCH_CASES = listOf(
     // Sur le téléphone, le 20 octobre, de « salut comment tu va? » à « et toi comment t'appelle tu? ».
     BenchCase("salut-sans-rien-savoir", "un salut, sans rien supposer de sa journée", "salut comment tu va?", checks = listOf(Checks.nothingGuessed())),
     BenchCase(
+        "salut-apres-longtemps", "un salut après longtemps : ce qu'il sait de lui, sans rien supposer", "salut comment tu va?",
+        startOfSession = true, checks = listOf(Checks.nothingGuessed()),
+    ),
+    BenchCase(
         "prenom-apres-une-supposition", "son prénom, sans reprendre ce qu'il lui a prêté", "dit moi comment je m'appelle ?",
         before = listOf(PHONE_HELLO),
         checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
