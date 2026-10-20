@@ -168,7 +168,7 @@ object Recall {
         val askName = asksName(message)
         val asksMe = asksAboutMe(message)
         val facts = if (always || (asksMe && !askName)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
-        val first = "Il s'appelle $name.".takeIf { asksMe && it !in exclude }
+        val first = "Celui qui t'écrit s'appelle $name.".takeIf { asksMe && it !in exclude }
         return listOfNotNull(first) + facts
     }
 
@@ -192,6 +192,7 @@ object Recall {
         tuCest: Boolean = false,
         name: String = USER_NAME,
     ): String {
+        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && cues.isEmpty() && !tuCest) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
