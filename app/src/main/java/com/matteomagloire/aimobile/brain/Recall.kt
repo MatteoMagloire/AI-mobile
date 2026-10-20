@@ -168,7 +168,7 @@ object Recall {
         val askName = asksName(message)
         val asksMe = asksAboutMe(message)
         val facts = if (always || (asksMe && !askName)) aboutMe(notes, limit, exclude).map { NoteLinks.plain(it.text) } else emptyList()
-        val first = "Celui qui t'écrit s'appelle $name.".takeIf { asksMe && it !in exclude }
+        val first = "Celui qui t'écrit s'appelle $name, un humain.".takeIf { asksMe && it !in exclude }
         return listOfNotNull(first) + facts
     }
 

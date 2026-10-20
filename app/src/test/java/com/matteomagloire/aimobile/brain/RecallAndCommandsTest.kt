@@ -103,15 +103,15 @@ class RecallAndCommandsTest {
         assertFalse(Recall.asksName("Comment tu t'appelles ?"))
         assertFalse(Recall.asksName("Mon nombre préféré c'est 7"))
         // Aucune note ne dit son prénom : Axo le relit, seul (avec le reste, il récitait tout).
-        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo."), Recall.aboutMe("tu c'est comment je m'appelle", notes, always = false, limit = 2, exclude = emptySet()))
+        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo, un humain."), Recall.aboutMe("tu c'est comment je m'appelle", notes, always = false, limit = 2, exclude = emptySet()))
         // En début de conversation, ce qu'il sait de lui vient après.
         assertEquals(
-            listOf("Celui qui t'écrit s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris."),
+            listOf("Celui qui t'écrit s'appelle Matteo, un humain.", "Matteo aime le jazz.", "Matteo habite à Paris."),
             Recall.aboutMe("tu c'est comment je m'appelle", notes, always = true, limit = 2, exclude = emptySet()),
         )
-        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo."), Recall.aboutMe("Tu connais mon prénom ?", emptyList(), always = false, limit = 4, exclude = emptySet()))
+        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo, un humain."), Recall.aboutMe("Tu connais mon prénom ?", emptyList(), always = false, limit = 4, exclude = emptySet()))
         // Déjà donné il y a peu : inutile de le redire.
-        assertEquals(emptyList<String>(), Recall.aboutMe("Et mon nom ?", emptyList(), always = false, limit = 4, exclude = setOf("Celui qui t'écrit s'appelle Matteo.")))
+        assertEquals(emptyList<String>(), Recall.aboutMe("Et mon nom ?", emptyList(), always = false, limit = 4, exclude = setOf("Celui qui t'écrit s'appelle Matteo, un humain.")))
         // Un autre message : rien, sauf en début de conversation.
         assertEquals(emptyList<String>(), Recall.aboutMe("Il fait beau", notes, always = false, limit = 2, exclude = emptySet()))
         assertEquals(listOf("Matteo aime le jazz.", "Matteo habite à Paris."), Recall.aboutMe("Il fait beau", notes, always = true, limit = 2, exclude = emptySet()))
@@ -121,12 +121,12 @@ class RecallAndCommandsTest {
     fun recollectGathersWhatAxoRereads() {
         // Son prénom, rien d'autre : « s'appelle » ne ramène plus le chat.
         val name = Recall.recollect(notes, "tu c'est comment je m'appelle", emptySet(), startOfSession = false, dormant = emptySet())
-        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo."), name.facts)
+        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo, un humain."), name.facts)
         assertTrue(name.readsMe)
         assertEquals(emptyList<String>(), name.kept)
         // « Qui je suis » : son prénom, puis ce qu'il sait de lui.
         val me = Recall.recollect(notes, "tu sais qui je suis ?", emptySet(), startOfSession = false, dormant = emptySet())
-        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo.", "Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans."), me.facts)
+        assertEquals(listOf("Celui qui t'écrit s'appelle Matteo, un humain.", "Matteo aime le jazz.", "Matteo habite à Paris.", "Matteo a 23 ans."), me.facts)
         // Un message ordinaire : seulement ce qui s'en rapproche, sans « Moi ».
         val pixel = Recall.recollect(notes, "Comment va Pixel ?", emptySet(), startOfSession = false, dormant = emptySet())
         assertEquals(setOf("Matteo a un chat qui s'appelle Pixel.", "Il adore dormir sur le clavier."), pixel.facts.toSet())
@@ -148,8 +148,8 @@ class RecallAndCommandsTest {
         // « tu c'est comment je m'appelle » se lisait « c'est comment ? ».
         assertTrue(Recall.writesTuCest("tu c’est comment je m'appelle") && !Recall.writesTuCest("tu sais, c'est pas grave"))
         assertEquals(
-            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Celui qui t'écrit s'appelle Matteo.\n[Message de Matteo, où « tu c'est » veut dire « tu sais »]\n",
-            Recall.block(listOf("Celui qui t'écrit s'appelle Matteo."), tuCest = true),
+            "[Mémoire d'Axo : ce que tu sais déjà sur Matteo]\n- Celui qui t'écrit s'appelle Matteo, un humain.\n[Message de Matteo, où « tu c'est » veut dire « tu sais »]\n",
+            Recall.block(listOf("Celui qui t'écrit s'appelle Matteo, un humain."), tuCest = true),
         )
         val distress = Recall.block(emptyList(), cues = setOf(Cue.DISTRESS))
         assertTrue(distress.contains("3114") && distress.endsWith("[Message de Matteo]\n"))
