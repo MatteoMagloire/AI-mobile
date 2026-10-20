@@ -46,6 +46,11 @@ class AxoBenchTest {
         val unknown = only - BENCH_CASES.map { it.id }.toSet()
         assertTrue("Conversations inconnues : ${unknown.joinToString()}", unknown.isEmpty())
         val cases = if (only.isEmpty()) BENCH_CASES else BENCH_CASES.filter { it.id in only }
+        // Des rappels à ne pas lire (Cue), pour mesurer ce qu'ils changent, jusque dans les messages d'après.
+        val skipped = System.getenv("AXO_BENCH_WITHOUT").orEmpty().split(',').map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
+        val unknownCues = skipped - Cue.entries.map { it.name }.toSet()
+        assertTrue("Rappels inconnus : ${unknownCues.joinToString()}", unknownCues.isEmpty())
+        val without = Cue.entries.filter { it.name in skipped }.toSet()
 
         val engine = LlamaEngine()
         engine.setThreads(Runtime.getRuntime().availableProcessors())
@@ -59,7 +64,7 @@ class AxoBenchTest {
         // Le plus long réglage du tirage : DRY relit tout le vocabulaire (l'appli garde le sien d'un message à l'autre).
         var samplerMs = 0L
         for (case in cases) {
-            val memories = memories(case)
+            val memories = memories(case, without)
             val memory = memories.last()
             results[case] = seeds.map { seed ->
                 // Comme à la réouverture de l'appli : la personnalité (gardée en mémoire), puis les échanges d'avant.
@@ -83,7 +88,7 @@ class AxoBenchTest {
         }
         engine.unload()
 
-        val report = report(model.fileName, seeds, trial, prompt, promptTokens, samplerMs, settings, results)
+        val report = report(model.fileName, seeds, trial, prompt, promptTokens, samplerMs, settings, without, results)
         File("build/axo-bench").apply { mkdirs() }.resolve("report.md").writeText(report)
         val all = results.values.flatten()
         println("Banc d'Axo : ${all.count { it.failures.isEmpty() }} réponses sur ${all.size} passent (build/axo-bench/report.md)")
@@ -94,14 +99,14 @@ class AxoBenchTest {
      * l'appli (Brain.prepare) : les souvenirs déjà glissés dans les 10 derniers ne sont pas redonnés, et
      * le modèle relit ceux d'avant avec la conversation (ChatMessage.modelText).
      */
-    private fun memories(case: BenchCase): List<String> {
+    private fun memories(case: BenchCase, without: Set<Cue>): List<String> {
         val out = ArrayList<String>()
         for ((i, message) in (case.before.map { it.first } + case.message).withIndex()) {
             val r = Recall.recollect(case.notes, message, Recall.alreadyGiven(out.takeLast(10)), case.startOfSession && i == 0, dormant = emptySet())
             out += Recall.block(
                 r.facts,
                 remember = BrainCommands.parse(message) is BrainCommand.Remember,
-                cues = Cue.of(message),
+                cues = Cue.of(message) - without,
                 tuCest = Recall.writesTuCest(message),
             )
         }
@@ -121,6 +126,7 @@ class AxoBenchTest {
         promptTokens: Int,
         samplerMs: Long,
         settings: Settings,
+        without: Set<Cue>,
         results: Map<BenchCase, List<Answer>>,
     ): String = buildString {
         val all = results.values.flatten()
@@ -140,6 +146,10 @@ class AxoBenchTest {
             appendLine("```")
             appendLine()
         }
+        if (without.isNotEmpty()) {
+            appendLine("Sans les rappels : ${without.joinToString { it.name }}")
+            appendLine()
+        }
         appendLine("**$passed réponses sur ${all.size} passent.**")
         appendLine()
         appendLine("Les réponses sont vérifiées et montrées comme l'appli les affiche : gras et italique sans astérisques, actions entre astérisques retirées.")
@@ -156,7 +166,7 @@ class AxoBenchTest {
             appendLine()
             appendLine("${case.about}.")
             appendLine()
-            val memories = memories(case)
+            val memories = memories(case, without)
             for ((i, turn) in case.before.withIndex()) {
                 appendLine("> **Matteo** : ${turn.first}")
                 appendLine(">")
