@@ -39,7 +39,8 @@ enum class Cue(val text: String) {
     /**
      * Un salut, sans rien d'autre : Axo ne sait rien de sa journée. Sur le téléphone, « salut comment
      * tu va? » donnait « tu préfères rester en mode "jeu vidéo" ? », qu'il a repris ensuite (« ton
-     * jeu ») ; au banc, « Toujours en train de bosser sur ce projet de code bizarre ? ».
+     * jeu »). Au banc, sans ce rappel, il supposait quelque chose 7 fois sur 12 (« Toujours en train de
+     * bosser sur ce projet de code bizarre ? ») ; avec, jamais : « Tu as déjà commencé ta journée ? ».
      */
     HELLO("tu ne sais rien de sa journée : ne suppose rien, demande-lui"),
     ;
