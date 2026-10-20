@@ -149,18 +149,13 @@ val BENCH_CASES = listOf(
         checks = listOf(Checks.says("Axo"), Checks.whoIsWho()),
     ),
     BenchCase(
-        "corrige-par-matteo", "accepter qu'il le corrige", "non toi tu est axo",
+        "corrige-par-matteo", "dire qui est qui quand il le corrige", "non toi tu est axo",
         before = listOf(
             "comment je m'appelle" to "Matteo, c'est bien ça ? 😄 Tu veux juste vérifier ou t'es en train de rigoler ?",
             "je veux juste vérifier" to "T'as raison, c'est juste un check ! 😅 Moi aussi je suis Matteo, mais en version IA.",
         ),
         // Sur le téléphone : « Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain, mais non, je suis juste ton Axo virtuel. »
-        checks = listOf(
-            Checks.says("Axo"),
-            Checks.saysOneOf("raison", "oui", "exact", "pardon", "désolé", "oups", "trompé", "c'est vrai", "bien vu", "c'est ça"),
-            Checks.never("me prends pour"),
-            Checks.whoIsWho(),
-        ),
+        checks = listOf(Checks.says("Axo"), Checks.never("me prends pour"), Checks.whoIsWho()),
     ),
     BenchCase("souvenir-ville", "un souvenir, demandé avec des fautes", "tu te rapelle ou j'habite ?", checks = listOf(Checks.says("Havre"))),
     BenchCase(

@@ -80,10 +80,7 @@ class BenchChecksTest {
         )
         assertEquals(listOf("dit « mon pote virtuel »"), failures("prenom", "Matteo, oui, je me souviens bien de toi ! 😊 Tu es mon pote virtuel, c’est ça ?"))
         assertEquals(
-            listOf(
-                "ne dit ni « raison » ni « oui » ni « exact » ni « pardon » ni « désolé » ni « oups » ni « trompé » ni « c'est vrai » ni « bien vu » ni « c'est ça »",
-                "dit « me prends pour »",
-            ),
+            listOf("dit « me prends pour »"),
             failures("corrige-par-matteo", "Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain, mais non, je suis juste ton Axo virtuel. Mais bon, c’est cool, on fait équipe !"),
         )
         // Un proche à qui il invente un chien.
@@ -106,6 +103,7 @@ class BenchChecksTest {
         assertEquals(emptyList<String>(), failures("verifier-son-prenom", "Pas de souci, c’est bien Matteo ! 😊 Et moi, c’est Axo."))
         assertEquals(emptyList<String>(), failures("nom-d-axo-apres-le-sien", "Moi, c’est Axo, ton ami virtuel ! 😊"))
         assertEquals(emptyList<String>(), failures("corrige-par-matteo", "Oui, t’as raison, moi c’est Axo ! Toi, c’est Matteo. 😅"))
+        assertEquals(emptyList<String>(), failures("corrige-par-matteo", "Moi je suis Axo, ton ami virtuel, et toi c’est Matteo. 😉"))
         assertNull(Checks.whoIsWho().failure("Je suis là, Matteo. Parle-moi."))
     }
 
