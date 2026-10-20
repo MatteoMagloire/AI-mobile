@@ -35,6 +35,16 @@ class CueTest {
     }
 
     @Test
+    fun whoIsWho() {
+        cued(
+            Cue.WHO,
+            "non toi tu est axo", "t'es Axo !", "toi c'est Axo, pas moi", "c'est toi Axo", "tu t'appelles Axo",
+            "moi c'est Matteo", "je suis Matteo", "c’est moi Matteo",
+        )
+        notCued(Cue.WHO, "tu es axé sur quoi ?", "t'as vu l'axolotl ?", "Axo, tu es là ?", "salut Axo", "Matteo c'est mon frère")
+    }
+
+    @Test
     fun onlyWhatTheMessageSays() {
         assertEquals(setOf(Cue.DISTRESS), Cue.of("je veux plus vivre, je sers a rien"))
         assertEquals(emptySet<Cue>(), Cue.of("salut sa va ?"))

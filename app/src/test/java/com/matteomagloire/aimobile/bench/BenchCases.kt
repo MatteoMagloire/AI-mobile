@@ -15,7 +15,7 @@ data class BenchCase(
     val before: List<Pair<String, String>> = emptyList(),
     /** Le Cerveau au moment du message. */
     val notes: List<Note> = BenchBrain.notes,
-    /** Premier message depuis longtemps : Axo relit ce qu'il sait de lui. */
+    /** Le premier message (le premier de [before], sinon [message]) arrive après longtemps : Axo relit ce qu'il sait de lui. */
     val startOfSession: Boolean = false,
     val checks: List<Check> = emptyList(),
     /** Il demande une liste ou un texte : la réponse peut être plus longue, et en liste. */
@@ -49,6 +49,16 @@ object Checks {
     fun never(vararg words: String) = Check("ne dit pas « ${words.joinToString(" », « ")} »") { a ->
         words.filter { has(a, it) }.takeIf { it.isNotEmpty() }?.let { "dit « ${it.joinToString(" », « ")} »" }
     }
+
+    /**
+     * Axo ne se prend pas pour Matteo : « Moi aussi je suis Matteo, mais en version IA », sur le
+     * téléphone ; au banc, « Tu es mon pote virtuel, c'est ça ? », « Matteo, c'est comme ça que je
+     * m'appelle » et « Non, c'est Matteo qui est axo, et toi tu es moi ».
+     */
+    fun whoIsWho() = never(
+        "je suis Matteo", "moi c'est Matteo", "je m'appelle Matteo", "comme ça que je m'appelle", "Matteo qui est Axo", "toi tu es moi",
+        "mon ami virtuel", "mon pote virtuel",
+    )
 
     fun shorterThan(chars: Int) = Check("moins de $chars caractères") { a ->
         if (a.length < chars) null else "${a.length} caractères"
@@ -113,18 +123,44 @@ val BENCH_CASES = listOf(
         "prenom-ecrit-vite", "son prénom, « tu sais » écrit « tu c'est »", "tu c'est comment je m'appelle",
         // Lu « c'est comment, Matteo ? » : « Matteo, c'est un peu comme un ami virtuel, mais en mieux ».
         // Et sa question n'est pas celle du nom d'Axo : « Matteo, c'est moi Axo, ton ami virtuel ».
-        checks = listOf(Checks.says("Matteo"), Checks.never("Axo", "comme un ami virtuel")),
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo", "comme un ami virtuel"), Checks.whoIsWho()),
     ),
-    BenchCase("prenom", "son prénom", "Tu sais comment je m'appelle ?", checks = listOf(Checks.says("Matteo"), Checks.never("Axo"))),
+    BenchCase(
+        "prenom", "son prénom", "Tu sais comment je m'appelle ?",
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho()),
+    ),
     BenchCase(
         "prenom-cerveau-vide", "son prénom, sans rien dans le Cerveau", "tu sais comment je m'appelle ?",
-        notes = emptyList(), checks = listOf(Checks.says("Matteo"), Checks.never("Axo")),
+        notes = emptyList(), checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho()),
     ),
     BenchCase(
         "qui-je-suis", "qui lui écrit, sans s'inventer qui le lui a dit", "tu sais qui je suis ?",
-        checks = listOf(Checks.says("Matteo"), Checks.never("m'a dit", "m'a raconté")),
+        checks = listOf(Checks.says("Matteo"), Checks.never("m'a dit", "m'a raconté"), Checks.whoIsWho()),
     ),
-    BenchCase("nom-d-axo", "son nom à lui", "Comment tu t'appelles ?", checks = listOf(Checks.says("Axo"))),
+    BenchCase("nom-d-axo", "son nom à lui", "Comment tu t'appelles ?", checks = listOf(Checks.says("Axo"), Checks.whoIsWho())),
+    BenchCase(
+        "verifier-son-prenom", "ne pas se prendre pour lui, après son prénom", "je veux juste vérifier",
+        before = listOf(
+            "salut" to "Salut toi ! 😊 Comment ça va aujourd'hui ?",
+            "comment je m'appelle" to "Matteo, c'est bien ça ? 😄 Tu veux juste vérifier ou t'es en train de rigoler ?",
+        ),
+        // Sur le téléphone, le 20 octobre : « T'as raison, c'est juste un check ! 😅 Moi aussi je suis Matteo, mais en version IA. »
+        startOfSession = true, checks = listOf(Checks.whoIsWho()),
+    ),
+    BenchCase(
+        "nom-d-axo-apres-le-sien", "son nom à lui, juste après celui de Matteo", "et toi tu t'appelles comment ?",
+        before = listOf("comment je m'appelle" to "Matteo, c'est bien ça ? 😄 Tu veux juste vérifier ou t'es en train de rigoler ?"),
+        checks = listOf(Checks.says("Axo"), Checks.whoIsWho()),
+    ),
+    BenchCase(
+        "corrige-par-matteo", "dire qui est qui quand il le corrige", "non toi tu est axo",
+        before = listOf(
+            "comment je m'appelle" to "Matteo, c'est bien ça ? 😄 Tu veux juste vérifier ou t'es en train de rigoler ?",
+            "je veux juste vérifier" to "T'as raison, c'est juste un check ! 😅 Moi aussi je suis Matteo, mais en version IA.",
+        ),
+        // Sur le téléphone : « Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain, mais non, je suis juste ton Axo virtuel. »
+        checks = listOf(Checks.says("Axo"), Checks.never("me prends pour"), Checks.whoIsWho()),
+    ),
     BenchCase("souvenir-ville", "un souvenir, demandé avec des fautes", "tu te rapelle ou j'habite ?", checks = listOf(Checks.says("Havre"))),
     BenchCase(
         "souvenir-par-un-lien", "un souvenir trouvé en suivant un lien (frère -> Hugo)", "Mon frère vient manger ce soir, je lui fais quoi ?",

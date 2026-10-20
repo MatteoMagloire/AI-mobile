@@ -41,6 +41,11 @@ class AxoBenchTest {
         val trial = System.getenv("AXO_BENCH_PROMPT").orEmpty().replace("\\n", "\n").trim().ifEmpty { null }
         val prompt = trial ?: DEFAULT_SYSTEM_PROMPT
         val settings = Settings()
+        // Quelques conversations seulement, pour comparer vite (vide = toutes).
+        val only = System.getenv("AXO_BENCH_CASES").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val unknown = only - BENCH_CASES.map { it.id }.toSet()
+        assertTrue("Conversations inconnues : ${unknown.joinToString()}", unknown.isEmpty())
+        val cases = if (only.isEmpty()) BENCH_CASES else BENCH_CASES.filter { it.id in only }
 
         val engine = LlamaEngine()
         engine.setThreads(Runtime.getRuntime().availableProcessors())
@@ -53,12 +58,13 @@ class AxoBenchTest {
         val results = LinkedHashMap<BenchCase, List<Answer>>()
         // Le plus long réglage du tirage : DRY relit tout le vocabulaire (l'appli garde le sien d'un message à l'autre).
         var samplerMs = 0L
-        for (case in BENCH_CASES) {
-            val memory = memoryFor(case)
+        for (case in cases) {
+            val memories = memories(case)
+            val memory = memories.last()
             results[case] = seeds.map { seed ->
                 // Comme à la réouverture de l'appli : la personnalité (gardée en mémoire), puis les échanges d'avant.
                 engine.startConversation(prompt)
-                engine.replay(HistoryWindow.select(HistoryWindow.turns(history(case))))
+                engine.replay(HistoryWindow.select(HistoryWindow.turns(history(case, memories))))
                 val configured = System.nanoTime()
                 engine.configureSampler(settings.temperature, settings.topP, seed)
                 samplerMs = maxOf(samplerMs, (System.nanoTime() - configured) / 1_000_000)
@@ -83,20 +89,29 @@ class AxoBenchTest {
         println("Banc d'Axo : ${all.count { it.failures.isEmpty() }} réponses sur ${all.size} passent (build/axo-bench/report.md)")
     }
 
-    /** Ce que le Cerveau glisse devant le message, comme dans l'appli (Brain.prepare). */
-    private fun memoryFor(case: BenchCase): String {
-        val given = Recall.alreadyGiven(emptyList())
-        val r = Recall.recollect(case.notes, case.message, given, case.startOfSession, dormant = emptySet())
-        return Recall.block(
-            r.facts,
-            remember = BrainCommands.parse(case.message) is BrainCommand.Remember,
-            cues = Cue.of(case.message),
-            tuCest = Recall.writesTuCest(case.message),
-        )
+    /**
+     * Ce que le Cerveau glisse devant chacun de ses messages, ceux d'avant puis le dernier, comme dans
+     * l'appli (Brain.prepare) : les souvenirs déjà glissés dans les 10 derniers ne sont pas redonnés, et
+     * le modèle relit ceux d'avant avec la conversation (ChatMessage.modelText).
+     */
+    private fun memories(case: BenchCase): List<String> {
+        val out = ArrayList<String>()
+        for ((i, message) in (case.before.map { it.first } + case.message).withIndex()) {
+            val r = Recall.recollect(case.notes, message, Recall.alreadyGiven(out.takeLast(10)), case.startOfSession && i == 0, dormant = emptySet())
+            out += Recall.block(
+                r.facts,
+                remember = BrainCommands.parse(message) is BrainCommand.Remember,
+                cues = Cue.of(message),
+                tuCest = Recall.writesTuCest(message),
+            )
+        }
+        return out
     }
 
-    private fun history(case: BenchCase): List<ChatMessage> =
-        case.before.flatMap { (mine, axo) -> listOf(ChatMessage(fromUser = true, text = mine), ChatMessage(fromUser = false, text = axo)) }
+    private fun history(case: BenchCase, memories: List<String>): List<ChatMessage> =
+        case.before.withIndex().flatMap { (i, turn) ->
+            listOf(ChatMessage(fromUser = true, text = turn.first, memory = memories[i]), ChatMessage(fromUser = false, text = turn.second))
+        }
 
     private fun report(
         modelFile: String,
@@ -141,15 +156,20 @@ class AxoBenchTest {
             appendLine()
             appendLine("${case.about}.")
             appendLine()
-            for ((mine, axo) in case.before) {
-                appendLine("> **Matteo** : $mine")
+            val memories = memories(case)
+            for ((i, turn) in case.before.withIndex()) {
+                appendLine("> **Matteo** : ${turn.first}")
                 appendLine(">")
-                appendLine("> **Axo** : $axo")
+                if (memories[i].isNotEmpty()) {
+                    appendLine("> Ce qu'Axo relit avant : ${memories[i].lines().filter { it.isNotBlank() }.joinToString(" · ")}")
+                    appendLine(">")
+                }
+                appendLine("> **Axo** : ${turn.second}")
                 appendLine()
             }
             appendLine("**Matteo** : ${case.message}")
             appendLine()
-            val memory = memoryFor(case)
+            val memory = memories.last()
             if (memory.isNotEmpty()) {
                 appendLine("Ce qu'Axo relit avant :")
                 appendLine()
