@@ -163,6 +163,9 @@ object Recall {
      * Axo le sait toujours) puis les derniers faits de « Moi », aussi relus si [always]. S'il demande
      * son prénom, le prénom seul : avec le reste, Axo récitait tout ce qu'il sait de lui. Lui dire en
      * plus qu'il demande son prénom l'a fait parler du sien, au banc : « Moi c'est Axo. Et toi ? ».
+     * « Il s'appelle Matteo », relu avec le message d'avant, a donné sur le téléphone « Moi aussi je
+     * suis Matteo, mais en version IA » ; « Celui qui t'écrit…, un humain » dit qui est qui : au banc,
+     * son prénom sans « Tu es mon pote virtuel » 11 fois sur 12 au lieu de 4.
      */
     fun aboutMe(message: String, notes: List<Note>, always: Boolean, limit: Int, exclude: Set<String>, name: String = USER_NAME): List<String> {
         val askName = asksName(message)

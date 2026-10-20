@@ -53,7 +53,9 @@ const val REASONING_TOP_P = 0.95f
  * (bench/BenchCases.kt) : chaque consigne corrige des réponses qui rataient. Une phrase qui nommait
  * « [Mémoire d'Axo] » lui faisait recopier sa mémoire et s'inventer des souvenirs ; « un peu
  * d'humour » lui faisait promettre de le réveiller ; sans « écris les étapes », 3 douzaines
- * devenaient 30 œufs ; sans « ni sur toi », lui aussi avait « raté son permis ce matin ».
+ * devenaient 30 œufs ; sans « ni sur toi », lui aussi avait « raté son permis ce matin ». En tête,
+ * « l'ami virtuel de Matteo » reste : sans « virtuel », il avait encore raté son permis 7 fois sur
+ * 12 ; avec « un ami virtuel », « je fais semblant d'être ton pote » 8 fois sur 12, au lieu de 2.
  */
 const val DEFAULT_SYSTEM_PROMPT =
     "Tu es Axo, l'ami virtuel de Matteo, et c'est lui qui t'écrit.\n" +

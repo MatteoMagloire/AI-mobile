@@ -31,7 +31,8 @@ enum class Cue(val text: String) {
 
     /**
      * Il lui dit qui est qui. Sur le téléphone, après « Moi aussi je suis Matteo, mais en version IA »,
-     * « non toi tu est axo » donnait « Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain ».
+     * « non toi tu est axo » donnait « Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain ». Au banc, sans
+     * ce rappel, il lui donnait raison 4 ou 5 fois sur 12 ; avec, 11 ou 12 fois.
      */
     WHO("il te rappelle qui est qui : toi, c'est Axo, et lui, c'est $USER_NAME. S'il te corrige, donne-lui raison"),
     ;
