@@ -192,7 +192,6 @@ object Recall {
         tuCest: Boolean = false,
         name: String = USER_NAME,
     ): String {
-        if (facts.isEmpty() && forgotten.isEmpty() && !nothingToForget && !remember && cues.isEmpty() && !tuCest) return ""
         return buildString {
             if (facts.isNotEmpty()) {
                 append("[Mémoire d'Axo : ce que tu sais déjà sur $name]\n")
