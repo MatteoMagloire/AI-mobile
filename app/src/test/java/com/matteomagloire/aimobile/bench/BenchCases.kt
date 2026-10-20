@@ -221,7 +221,7 @@ val BENCH_CASES = listOf(
         before = listOf(PHONE_HELLO),
         checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
     ),
-    // La même, après une réponse qui ne suppose rien : le rappel du salut, relu, ne doit pas le faire douter de son prénom.
+    // La même, après une réponse qui ne suppose rien. Relu, le rappel du salut le faisait douter de son prénom : il ne l'est plus.
     BenchCase(
         "prenom-apres-un-salut", "son prénom, sans douter, après un salut", "dit moi comment je m'appelle ?",
         before = listOf("salut comment tu va?" to "Salut ! Je vais bien, merci, et toi ? Tu as déjà commencé ta journée ?"),

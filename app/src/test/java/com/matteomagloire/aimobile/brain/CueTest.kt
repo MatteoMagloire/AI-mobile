@@ -51,6 +51,18 @@ class CueTest {
     }
 
     @Test
+    fun greetingOnlyForTheReply() {
+        assertEquals(setOf(Cue.WHO), Cue.lasting(setOf(Cue.WHO, Cue.HELLO)))
+        assertEquals(Cue.entries.toSet() - Cue.HELLO, Cue.lasting(Cue.entries.toSet()))
+        // Une fois répondu, un simple salut reste tel quel devant le modèle.
+        val salut = Brain.Prepared.of(Cue.of("salut sa va ?")) { Recall.block(emptyList(), cues = it) }
+        assertEquals("[Pour Axo : ${Cue.HELLO.text}]\n[Message de $USER_NAME]\n", salut.memory)
+        assertEquals("", salut.lasting)
+        val fievre = Brain.Prepared.of(Cue.of("il a de la fièvre")) { Recall.block(listOf("Matteo a un chat, Pixel."), cues = it) }
+        assertEquals(fievre.memory, fievre.lasting)
+    }
+
+    @Test
     fun onlyWhatTheMessageSays() {
         assertEquals(setOf(Cue.DISTRESS), Cue.of("je veux plus vivre, je sers a rien"))
         assertEquals(setOf(Cue.HELLO), Cue.of("salut sa va ?"))

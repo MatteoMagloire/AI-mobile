@@ -151,6 +151,18 @@ class LlamaEngine(private val taskCacheDir: File? = null) {
         }
     }
 
+    /**
+     * Réécrit le dernier échange, une fois répondu : [userText] à la place du message envoyé, puis
+     * [reply]. Ce qu'Axo ne lisait que pour répondre ([com.matteomagloire.aimobile.brain.Cue.onlyForTheReply])
+     * n'est ainsi pas relu ensuite. False si ce n'est plus possible (rien n'a changé).
+     */
+    suspend fun rewriteLastExchange(userText: String, reply: String): Boolean = locked {
+        checkReady()
+        val c = LlamaNative.rewriteLastExchange(userText, reply)
+        check(c <= 1) { "Échec de la réécriture du dernier message (code $c)" }
+        c == 0
+    }
+
     /** Écrit le KV de la conversation dans [file]. Null si rien n'a pu être écrit. */
     suspend fun saveSession(file: File): SavedSession? = locked {
         if (_state.value !is State.Ready) return@locked null

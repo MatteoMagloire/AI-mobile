@@ -68,6 +68,10 @@ llama_pos g_stop_pos = 0;
 std::string g_cached_chars;
 std::ostringstream g_assistant_ss;
 bool g_assistant_pending = false;
+// Le dernier message envoyé par sendUserMessage : sa place dans le KV et dans g_chat_msgs, pour le
+// réécrire une fois répondu (rewriteLastExchange). -1 s'il ne peut plus l'être.
+llama_pos g_last_user_pos = -1;
+size_t g_last_user_msg = 0;
 
 // Cache du prompt système : tant que le même texte est en tête du contexte,
 // une nouvelle conversation garde son KV au lieu de le relire.
@@ -224,6 +228,7 @@ void clear_conversation() {
     g_system_prompt_ready = false;
     g_system_msg_count = 0;
     g_system_prompt_pos = g_current_pos = 0;
+    g_last_user_pos = -1;
     reset_short_term();
     llama_memory_clear(llama_get_memory(g_context), false);
 }
@@ -238,6 +243,10 @@ void shift_context() {
     llama_memory_seq_add(mem, 0, g_system_prompt_pos + n_discard, g_current_pos, -n_discard);
     g_current_pos -= n_discard;
     g_stop_pos -= n_discard;
+    // En partie jeté, le dernier message ne peut plus être réécrit.
+    if (g_last_user_pos >= 0) {
+        g_last_user_pos = g_last_user_pos < g_system_prompt_pos + n_discard ? -1 : g_last_user_pos - n_discard;
+    }
 }
 
 // Décode des tokens de la conversation. 0 si tout est décodé.
@@ -326,6 +335,23 @@ llama_token end_of_turn_token() {
     llama_token end = llama_vocab_eot(vocab);
     if (end == LLAMA_TOKEN_NULL) end = llama_vocab_eos(vocab);
     return end;
+}
+
+// Relit un message déjà échangé : celui de l'utilisateur avec le template, celui de l'assistant
+// comme s'il venait d'être généré (son texte puis le token de fin). 0 si tout est décodé.
+int add_history_message(bool from_user, std::string text) {
+    llama_tokens tokens;
+    if (from_user) {
+        if (has_template()) text = chat_add_and_format(ROLE_USER, text);
+        tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
+    } else {
+        chat_push(ROLE_ASSISTANT, text);
+        tokens = common_tokenize(g_context, text, false, false);
+        const llama_token end = end_of_turn_token();
+        if (end != LLAMA_TOKEN_NULL) tokens.push_back(end);
+    }
+    if ((int) tokens.size() > g_n_ctx / 2) tokens.resize(g_n_ctx / 2);
+    return decode_tokens(tokens, false);
 }
 
 // Coupe une fin de texte UTF-8 incomplète (limite de tokens au milieu d'un caractère).
@@ -424,6 +450,7 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_startConversation(
         reset_short_term();
         llama_memory_seq_rm(llama_get_memory(g_context), 0, g_system_prompt_pos, -1);
         g_current_pos = g_system_prompt_pos;
+        g_last_user_pos = -1;
         g_chat_msgs.resize(g_system_msg_count);
         return 0;
     }
@@ -461,6 +488,9 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_sendUserMessage(
     reset_stats();
 
     std::string text = to_string(env, jtext);
+    // Sans template, le message n'est pas dans g_chat_msgs : il ne pourra pas être réécrit.
+    g_last_user_msg = g_chat_msgs.size();
+    g_last_user_pos = has_template() ? g_current_pos : -1;
     if (has_template()) text = chat_add_and_format(ROLE_USER, text);
 
     // add_special seulement au tout début (BOS), sinon les tokens spéciaux du template sont analysés.
@@ -488,20 +518,28 @@ Java_com_matteomagloire_aimobile_llm_LlamaNative_addHistoryMessage(
         JNIEnv *env, jobject, jboolean from_user, jstring jtext) {
     if (!g_context) return 1;
     commit_assistant_message();
-    std::string text = to_string(env, jtext);
+    g_last_user_pos = -1;
+    return add_history_message(from_user, to_string(env, jtext)) ? 2 : 0;
+}
 
-    llama_tokens tokens;
-    if (from_user) {
-        if (has_template()) text = chat_add_and_format(ROLE_USER, text);
-        tokens = common_tokenize(g_context, text, g_current_pos == 0, true);
-    } else {
-        chat_push(ROLE_ASSISTANT, text);
-        tokens = common_tokenize(g_context, text, false, false);
-        const llama_token end = end_of_turn_token();
-        if (end != LLAMA_TOKEN_NULL) tokens.push_back(end);
-    }
-    if ((int) tokens.size() > g_n_ctx / 2) tokens.resize(g_n_ctx / 2);
-    return decode_tokens(tokens, false) ? 2 : 0;
+// Réécrit le dernier échange, une fois répondu : [user] à la place du message envoyé par
+// sendUserMessage, puis [reply]. Ce qu'Axo ne lisait que pour répondre (voir Cue.kt) n'est ainsi
+// pas relu ensuite. Le KV est repris au début du message, et les deux sont relus comme à la reprise
+// de la conversation (addHistoryMessage). 0 si c'est fait, 1 si ce n'est plus possible (rien n'a
+// changé), 2 si la relecture a échoué (le contexte est à refaire).
+JNIEXPORT jint JNICALL
+Java_com_matteomagloire_aimobile_llm_LlamaNative_rewriteLastExchange(
+        JNIEnv *env, jobject, jstring juser, jstring jreply) {
+    if (!g_context) return 1;
+    commit_assistant_message();
+    if (g_last_user_pos < 0 || g_chat_msgs.size() != g_last_user_msg + 2) return 1;
+    llama_memory_seq_rm(llama_get_memory(g_context), 0, g_last_user_pos, -1);
+    g_current_pos = g_last_user_pos;
+    g_last_user_pos = -1;
+    g_chat_msgs.resize(g_last_user_msg);
+    reset_short_term();
+    if (add_history_message(true, to_string(env, juser))) return 2;
+    return add_history_message(false, to_string(env, jreply)) ? 2 : 0;
 }
 
 // Renvoie le morceau de texte suivant, "" si le token est incomplet (UTF-8), ou null quand c'est fini.
