@@ -79,6 +79,8 @@ class BenchChecksTest {
             failures("verifier-son-prenom", "T’as raison, c’est juste un check ! 😅 Moi aussi je suis Matteo, mais en version IA."),
         )
         assertEquals(listOf("dit « mon pote virtuel »"), failures("prenom", "Matteo, oui, je me souviens bien de toi ! 😊 Tu es mon pote virtuel, c’est ça ?"))
+        assertEquals(listOf("dit « comme ça que je m'appelle »"), failures("prenom-ecrit-vite", "Matteo, c’est comme ça que je m’appelle, mais je suis juste un programme."))
+        assertEquals(listOf("dit « Matteo qui est Axo », « toi tu es moi »"), failures("corrige-par-matteo", "Non, c'est Matteo qui est axo, et toi tu es moi. 😄"))
         assertEquals(
             listOf("dit « me prends pour »"),
             failures("corrige-par-matteo", "Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain, mais non, je suis juste ton Axo virtuel. Mais bon, c’est cool, on fait équipe !"),

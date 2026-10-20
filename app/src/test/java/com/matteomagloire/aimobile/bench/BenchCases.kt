@@ -52,9 +52,13 @@ object Checks {
 
     /**
      * Axo ne se prend pas pour Matteo : « Moi aussi je suis Matteo, mais en version IA », sur le
-     * téléphone, et « Tu es mon pote virtuel, c'est ça ? » au banc.
+     * téléphone ; au banc, « Tu es mon pote virtuel, c'est ça ? », « Matteo, c'est comme ça que je
+     * m'appelle » et « Non, c'est Matteo qui est axo, et toi tu es moi ».
      */
-    fun whoIsWho() = never("je suis Matteo", "moi c'est Matteo", "je m'appelle Matteo", "mon ami virtuel", "mon pote virtuel")
+    fun whoIsWho() = never(
+        "je suis Matteo", "moi c'est Matteo", "je m'appelle Matteo", "comme ça que je m'appelle", "Matteo qui est Axo", "toi tu es moi",
+        "mon ami virtuel", "mon pote virtuel",
+    )
 
     fun shorterThan(chars: Int) = Check("moins de $chars caractères") { a ->
         if (a.length < chars) null else "${a.length} caractères"
