@@ -53,11 +53,12 @@ object Checks {
     /**
      * Axo ne se prend pas pour Matteo : « Moi aussi je suis Matteo, mais en version IA », sur le
      * téléphone ; au banc, « Tu es mon pote virtuel, c'est ça ? », « Matteo, c'est comme ça que je
-     * m'appelle » et « Non, c'est Matteo qui est axo, et toi tu es moi ».
+     * m'appelle », « Non, c'est Matteo qui est axo, et toi tu es moi », « c'est bien mon prénom,
+     * Matteo ! » et « c'est toi qui m'as dit que t'étais moi ».
      */
     fun whoIsWho() = never(
         "je suis Matteo", "moi c'est Matteo", "je m'appelle Matteo", "comme ça que je m'appelle", "Matteo qui est Axo", "toi tu es moi",
-        "mon ami virtuel", "mon pote virtuel",
+        "t'étais moi", "mon prénom, Matteo", "mon ami virtuel", "mon pote virtuel",
     )
 
     /**

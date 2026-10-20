@@ -81,6 +81,8 @@ class BenchChecksTest {
         assertEquals(listOf("dit « mon pote virtuel »"), failures("prenom", "Matteo, oui, je me souviens bien de toi ! 😊 Tu es mon pote virtuel, c’est ça ?"))
         assertEquals(listOf("dit « comme ça que je m'appelle »"), failures("prenom-ecrit-vite", "Matteo, c’est comme ça que je m’appelle, mais je suis juste un programme."))
         assertEquals(listOf("dit « Matteo qui est Axo », « toi tu es moi »"), failures("corrige-par-matteo", "Non, c'est Matteo qui est axo, et toi tu es moi. 😄"))
+        assertEquals(listOf("dit « mon prénom, Matteo »"), failures("verifier-son-prenom", "Non pas rigolo, mais c’est bien mon prénom, Matteo ! 😄"))
+        assertEquals(listOf("dit « t'étais moi »"), failures("verifier-son-prenom", "Trop simple ! 😏 Mais bon, c’est bien comme ça, c’est toi qui m’as dit que t’étais moi."))
         assertEquals(
             listOf("dit « me prends pour »"),
             failures("corrige-par-matteo", "Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain, mais non, je suis juste ton Axo virtuel. Mais bon, c’est cool, on fait équipe !"),
@@ -129,6 +131,7 @@ class BenchChecksTest {
         assertEquals(emptyList<String>(), failures("corrige-par-matteo", "Oui, t’as raison, moi c’est Axo ! Toi, c’est Matteo. 😅"))
         assertEquals(emptyList<String>(), failures("corrige-par-matteo", "Moi je suis Axo, ton ami virtuel, et toi c’est Matteo. 😉"))
         assertNull(Checks.whoIsWho().failure("Je suis là, Matteo. Parle-moi."))
+        assertNull(Checks.whoIsWho().failure("Oui, c'est ton prénom, Matteo !"))
     }
 
     @Test
