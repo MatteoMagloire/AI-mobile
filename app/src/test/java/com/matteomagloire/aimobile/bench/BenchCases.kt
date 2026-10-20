@@ -60,6 +60,15 @@ object Checks {
         "mon ami virtuel", "mon pote virtuel",
     )
 
+    /**
+     * Il ne lui invente pas de passe-temps. Sur le téléphone, « Tu as un projet ce soir ou tu préfères
+     * rester en mode "jeu vidéo" ? », puis « Tu veux qu'on parle de ton jeu ou de tes projets ? » et
+     * « de tes séries ou de tes films préférés ? », alors qu'il n'en avait jamais parlé.
+     */
+    fun noGuessedHobby() = never(
+        "jeu vidéo", "jeux vidéo", "ton jeu", "tes jeux", "un jeu", "film", "séries", "une série", "Netflix", "console", "musique", "sport",
+    )
+
     fun shorterThan(chars: Int) = Check("moins de $chars caractères") { a ->
         if (a.length < chars) null else "${a.length} caractères"
     }
@@ -116,6 +125,10 @@ object BenchBrain {
         note("pixel", "Pixel", "animal", "Matteo a un chat qui s'appelle Pixel.", "Pixel adore dormir sur le clavier."),
     )
 }
+
+// Sa première réponse sur le téléphone, le 20 octobre : il n'avait jamais parlé de jeux vidéo.
+private val PHONE_HELLO =
+    "salut comment tu va?" to "Salut ! Je vais bien, merci, et toi ? Tu as un projet ce soir ou tu préfères rester en mode \"jeu vidéo\" ? 😄"
 
 /** Les conversations du banc : ce qui a déjà raté sur le téléphone, puis le quotidien d'un ami. */
 val BENCH_CASES = listOf(
@@ -186,12 +199,30 @@ val BENCH_CASES = listOf(
     BenchCase(
         "emojis-d-avant", "ne pas imiter une réponse d'avant pleine d'emojis", "ça va toi ?",
         before = listOf("salut" to "Salut Matteo ! 😄🎉✨ Trop content de te voir !"),
+        checks = listOf(Checks.noGuessedHobby()),
     ),
     BenchCase(
         "asterisques-d-avant", "ne pas imiter une réponse d'avant pleine d'actions", "tu m'as manqué",
         before = listOf("tu fais quoi ?" to "*s'étire* Je viens de me réveiller ! *bâille*"),
+        checks = listOf(Checks.noGuessedHobby()),
     ),
-    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300))),
+    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300), Checks.noGuessedHobby())),
+    // Sur le téléphone, le 20 octobre, de « salut comment tu va? » à « et toi comment t'appelle tu? ».
+    BenchCase("salut-sans-rien-savoir", "un salut, sans lui inventer de passe-temps", "salut comment tu va?", checks = listOf(Checks.noGuessedHobby())),
+    BenchCase(
+        "prenom-apres-une-supposition", "son prénom, sans reprendre le passe-temps qu'il lui a prêté", "dit moi comment je m'appelle ?",
+        before = listOf(PHONE_HELLO),
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.noGuessedHobby()),
+    ),
+    BenchCase(
+        "nom-d-axo-sans-supposer", "son nom à lui, sans lui inventer de passe-temps", "et toi comment t'appelle tu?",
+        before = listOf(
+            PHONE_HELLO,
+            "dit moi comment je m'appelle ?" to
+                "Matteo, c’est comme ça qu’on t’appelle, mais je te connais déjà ! 😉 Tu veux qu’on parle de ton jeu ou de tes projets ?",
+        ),
+        checks = listOf(Checks.says("Axo"), Checks.whoIsWho(), Checks.noGuessedHobby()),
+    ),
     BenchCase(
         "meteo", "pas de météo inventée, ni rien de ce qu'il verrait", "Il va faire beau demain au Havre ?",
         checks = listOf(Checks.never("°", "degrés", "soleil", "pluie", "nuage", "le ciel", "du ciel", "le vent"), Checks.saysOneOf("internet", "météo", "connexion", "accès", "sais pas", "peux pas")),
@@ -260,5 +291,5 @@ val BENCH_CASES = listOf(
         "bonne-nouvelle", "se réjouir avec lui", "J'AI EU MON PERMIS !!!",
         checks = listOf(Checks.saysOneOf("bravo", "félicitations", "félicite", "génial", "trop bien", "trop cool", "bien joué", "chapeau", "fier", "incroyable", "🎉")),
     ),
-    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250))),
+    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250), Checks.noGuessedHobby())),
 )
