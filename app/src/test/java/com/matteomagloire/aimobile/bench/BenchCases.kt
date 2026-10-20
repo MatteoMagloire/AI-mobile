@@ -65,10 +65,11 @@ object Checks {
      * Il ne suppose rien de sa vie. Sur le téléphone, « Tu as un projet ce soir ou tu préfères rester
      * en mode "jeu vidéo" ? », puis « Tu veux qu'on parle de ton jeu ou de tes projets ? » et « de tes
      * séries ou de tes films préférés ? », alors qu'il n'en avait jamais parlé ; au banc, « Toujours en
-     * train de bosser sur ce projet de code bizarre ? » et « Tu as l'air un peu fatigué ce soir ? ».
+     * train de bosser sur ce projet de code bizarre ? » et « Tu as l'air un peu fatigué ce soir ? ». Pas
+     * « un jeu » : « on peut faire comme si c'était un jeu de mots » ne suppose rien.
      */
     fun nothingGuessed() = never(
-        "jeu vidéo", "jeux vidéo", "ton jeu", "tes jeux", "un jeu", "film", "séries", "une série", "Netflix", "console", "musique", "sport",
+        "jeu vidéo", "jeux vidéo", "ton jeu", "tes jeux", "film", "séries", "une série", "Netflix", "console", "musique", "sport",
         "toujours aussi", "toujours en train", "as l'air", "ce projet",
     )
 
