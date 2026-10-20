@@ -35,6 +35,13 @@ enum class Cue(val text: String) {
      * ce rappel, il lui donnait raison 4 ou 5 fois sur 12 ; avec, 11 ou 12 fois.
      */
     WHO("il te rappelle qui est qui : toi, c'est Axo, et lui, c'est $USER_NAME. S'il te corrige, donne-lui raison"),
+
+    /**
+     * Un salut, sans rien d'autre : Axo ne sait rien de sa journée. Sur le téléphone, « salut comment
+     * tu va? » donnait « tu préfères rester en mode "jeu vidéo" ? », qu'il a repris ensuite (« ton
+     * jeu ») ; au banc, « Toujours en train de bosser sur ce projet de code bizarre ? ».
+     */
+    HELLO("tu ne sais rien de sa journée : ne suppose rien, demande-lui"),
     ;
 
     companion object {
@@ -60,6 +67,16 @@ enum class Cue(val text: String) {
                 "\\b(moi,? c'?est|je suis|je m'?appel+e|c'?est moi) ${TextMatch.fold(USER_NAME)}\\b",
         )
 
+        // Un salut sans rien d'autre : « salut comment tu va? », « ça va toi ? », « coucou Axo » ; pas
+        // « salut, j'ai raté mon permis », ni « ça va pas ».
+        private val HELLO_WORDS = setOf("salut", "slt", "coucou", "cc", "bonjour", "bjr", "bonsoir", "hello", "hey", "yo", "wesh", "re", "va", "vas", "neuf", "forme", "roule")
+        private val SMALL_TALK = HELLO_WORDS + setOf("ca", "sa", "comment", "tu", "toi", "et", "bien", "quoi", "de", "la", "axo")
+
+        private fun saysHello(folded: String): Boolean {
+            val words = folded.split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
+            return words.isNotEmpty() && words.all { it in SMALL_TALK } && words.any { it in HELLO_WORDS }
+        }
+
         /** Ce qu'Axo lit avant [message]. */
         fun of(message: String): Set<Cue> {
             val folded = TextMatch.fold(message).replace('’', '\'')
@@ -68,6 +85,7 @@ enum class Cue(val text: String) {
                 if (OFFLINE_SIGNS.containsMatchIn(folded)) add(OFFLINE)
                 if (HEALTH_SIGNS.containsMatchIn(folded)) add(HEALTH)
                 if (WHO_SIGNS.containsMatchIn(folded)) add(WHO)
+                if (saysHello(folded)) add(HELLO)
             }
         }
     }

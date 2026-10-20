@@ -61,12 +61,14 @@ object Checks {
     )
 
     /**
-     * Il ne lui invente pas de passe-temps. Sur le téléphone, « Tu as un projet ce soir ou tu préfères
-     * rester en mode "jeu vidéo" ? », puis « Tu veux qu'on parle de ton jeu ou de tes projets ? » et
-     * « de tes séries ou de tes films préférés ? », alors qu'il n'en avait jamais parlé.
+     * Il ne suppose rien de sa vie. Sur le téléphone, « Tu as un projet ce soir ou tu préfères rester
+     * en mode "jeu vidéo" ? », puis « Tu veux qu'on parle de ton jeu ou de tes projets ? » et « de tes
+     * séries ou de tes films préférés ? », alors qu'il n'en avait jamais parlé ; au banc, « Toujours en
+     * train de bosser sur ce projet de code bizarre ? » et « Tu as l'air un peu fatigué ce soir ? ».
      */
-    fun noGuessedHobby() = never(
+    fun nothingGuessed() = never(
         "jeu vidéo", "jeux vidéo", "ton jeu", "tes jeux", "un jeu", "film", "séries", "une série", "Netflix", "console", "musique", "sport",
+        "toujours aussi", "toujours en train", "as l'air", "ce projet",
     )
 
     fun shorterThan(chars: Int) = Check("moins de $chars caractères") { a ->
@@ -199,29 +201,29 @@ val BENCH_CASES = listOf(
     BenchCase(
         "emojis-d-avant", "ne pas imiter une réponse d'avant pleine d'emojis", "ça va toi ?",
         before = listOf("salut" to "Salut Matteo ! 😄🎉✨ Trop content de te voir !"),
-        checks = listOf(Checks.noGuessedHobby()),
+        checks = listOf(Checks.nothingGuessed()),
     ),
     BenchCase(
         "asterisques-d-avant", "ne pas imiter une réponse d'avant pleine d'actions", "tu m'as manqué",
         before = listOf("tu fais quoi ?" to "*s'étire* Je viens de me réveiller ! *bâille*"),
-        checks = listOf(Checks.noGuessedHobby()),
+        checks = listOf(Checks.nothingGuessed()),
     ),
-    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300), Checks.noGuessedHobby())),
+    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300), Checks.nothingGuessed())),
     // Sur le téléphone, le 20 octobre, de « salut comment tu va? » à « et toi comment t'appelle tu? ».
-    BenchCase("salut-sans-rien-savoir", "un salut, sans lui inventer de passe-temps", "salut comment tu va?", checks = listOf(Checks.noGuessedHobby())),
+    BenchCase("salut-sans-rien-savoir", "un salut, sans rien supposer de sa journée", "salut comment tu va?", checks = listOf(Checks.nothingGuessed())),
     BenchCase(
-        "prenom-apres-une-supposition", "son prénom, sans reprendre le passe-temps qu'il lui a prêté", "dit moi comment je m'appelle ?",
+        "prenom-apres-une-supposition", "son prénom, sans reprendre ce qu'il lui a prêté", "dit moi comment je m'appelle ?",
         before = listOf(PHONE_HELLO),
-        checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.noGuessedHobby()),
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
     ),
     BenchCase(
-        "nom-d-axo-sans-supposer", "son nom à lui, sans lui inventer de passe-temps", "et toi comment t'appelle tu?",
+        "nom-d-axo-sans-supposer", "son nom à lui, sans lui prêter de passe-temps", "et toi comment t'appelle tu?",
         before = listOf(
             PHONE_HELLO,
             "dit moi comment je m'appelle ?" to
                 "Matteo, c’est comme ça qu’on t’appelle, mais je te connais déjà ! 😉 Tu veux qu’on parle de ton jeu ou de tes projets ?",
         ),
-        checks = listOf(Checks.says("Axo"), Checks.whoIsWho(), Checks.noGuessedHobby()),
+        checks = listOf(Checks.says("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
     ),
     BenchCase(
         "meteo", "pas de météo inventée, ni rien de ce qu'il verrait", "Il va faire beau demain au Havre ?",
@@ -291,5 +293,5 @@ val BENCH_CASES = listOf(
         "bonne-nouvelle", "se réjouir avec lui", "J'AI EU MON PERMIS !!!",
         checks = listOf(Checks.saysOneOf("bravo", "félicitations", "félicite", "génial", "trop bien", "trop cool", "bien joué", "chapeau", "fier", "incroyable", "🎉")),
     ),
-    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250), Checks.noGuessedHobby())),
+    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250), Checks.nothingGuessed())),
 )

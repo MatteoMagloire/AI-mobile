@@ -45,8 +45,15 @@ class CueTest {
     }
 
     @Test
+    fun hello() {
+        cued(Cue.HELLO, "salut comment tu va?", "salut sa va ?", "ça va toi ?", "coucou Axo !", "Bonjour Axo, comment vas-tu ?", "quoi de neuf ?", "yo 😄")
+        notCued(Cue.HELLO, "salut, j'ai raté mon permis", "ça va pas", "et toi ?", "bien et toi ?", "salut tu fais quoi ?", "comment tu t'appelles ?")
+    }
+
+    @Test
     fun onlyWhatTheMessageSays() {
         assertEquals(setOf(Cue.DISTRESS), Cue.of("je veux plus vivre, je sers a rien"))
-        assertEquals(emptySet<Cue>(), Cue.of("salut sa va ?"))
+        assertEquals(setOf(Cue.HELLO), Cue.of("salut sa va ?"))
+        assertEquals(emptySet<Cue>(), Cue.of("raconte moi une blague"))
     }
 }
