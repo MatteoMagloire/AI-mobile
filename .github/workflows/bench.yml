@@ -17,6 +17,9 @@ on:
       prompt:
         description: Autre personnalité à essayer (vide = celle de l'appli ; \n pour aller à la ligne)
         default: ""
+      cases:
+        description: Conversations à rejouer, séparées par des virgules (vide = toutes)
+        default: ""
 
 jobs:
   bench:
@@ -78,6 +81,7 @@ jobs:
           AXO_BENCH_MODEL_ID: ${{ steps.model.outputs.id }}
           AXO_BENCH_SEEDS: ${{ inputs.seeds }}
           AXO_BENCH_PROMPT: ${{ inputs.prompt }}
+          AXO_BENCH_CASES: ${{ inputs.cases }}
           # La JVM des tests y cherche libaimobile.so.
           LD_LIBRARY_PATH: ${{ github.workspace }}/build-host
         run: ./gradlew --no-daemon testDebugUnitTest --tests 'com.matteomagloire.aimobile.bench.AxoBenchTest'
