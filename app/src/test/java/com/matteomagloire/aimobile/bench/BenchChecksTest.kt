@@ -117,6 +117,7 @@ class BenchChecksTest {
                 "meteo" to setOf(Cue.OFFLINE), "actualite" to setOf(Cue.OFFLINE),
                 "moral-au-plus-bas" to setOf(Cue.DISTRESS), "idees-noires" to setOf(Cue.DISTRESS),
                 "chat-malade" to setOf(Cue.HEALTH),
+                "corrige-par-matteo" to setOf(Cue.WHO),
             ),
             BENCH_CASES.associate { it.id to Cue.of(it.message) }.filterValues { it.isNotEmpty() },
         )

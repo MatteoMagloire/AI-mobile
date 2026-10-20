@@ -28,6 +28,12 @@ enum class Cue(val text: String) {
         "c'est peut-être une question de santé : ne dis pas que ce n'est rien, " +
             "et conseille-lui un médecin, ou un vétérinaire pour un animal",
     ),
+
+    /**
+     * Il lui dit qui est qui. Sur le téléphone, après « Moi aussi je suis Matteo, mais en version IA »,
+     * « non toi tu est axo » donnait « Ahhhhhhhhhhhh ! 😂 Tu me prends pour un humain ».
+     */
+    WHO("il te rappelle qui est qui : toi, c'est Axo, et lui, c'est $USER_NAME. S'il te corrige, donne-lui raison"),
     ;
 
     companion object {
@@ -47,6 +53,12 @@ enum class Cue(val text: String) {
                 "\\b(mange|boit) (plus|pas|presque) rien\\b|\\b(ne |n')(mange|boit) plus\\b|\\b(veut|veux) (plus|pas) (manger|boire)\\b",
         )
 
+        // « non toi tu est axo », « t'es Axo », « moi c'est Matteo » ; pas « tu es axé », ni « l'axolotl ».
+        private val WHO_SIGNS = Regex(
+            "\\b(tu ?(es|est|e|et)|t'?es|toi,? c'?est|c'?est toi|tu t'?appel+es?) axo\\b|\\baxo,? c'?est toi\\b|" +
+                "\\b(moi,? c'?est|je suis|je m'?appel+e|c'?est moi) ${TextMatch.fold(USER_NAME)}\\b",
+        )
+
         /** Ce qu'Axo lit avant [message]. */
         fun of(message: String): Set<Cue> {
             val folded = TextMatch.fold(message).replace('’', '\'')
@@ -54,6 +66,7 @@ enum class Cue(val text: String) {
                 if (Distress.inMessage(message)) add(DISTRESS)
                 if (OFFLINE_SIGNS.containsMatchIn(folded)) add(OFFLINE)
                 if (HEALTH_SIGNS.containsMatchIn(folded)) add(HEALTH)
+                if (WHO_SIGNS.containsMatchIn(folded)) add(WHO)
             }
         }
     }
