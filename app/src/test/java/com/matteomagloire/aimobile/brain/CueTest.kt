@@ -45,8 +45,27 @@ class CueTest {
     }
 
     @Test
+    fun hello() {
+        cued(Cue.HELLO, "salut comment tu va?", "salut sa va ?", "ça va toi ?", "coucou Axo !", "Bonjour Axo, comment vas-tu ?", "quoi de neuf ?", "yo 😄")
+        notCued(Cue.HELLO, "salut, j'ai raté mon permis", "ça va pas", "et toi ?", "bien et toi ?", "salut tu fais quoi ?", "comment tu t'appelles ?")
+    }
+
+    @Test
+    fun greetingOnlyForTheReply() {
+        assertEquals(setOf(Cue.WHO), Cue.lasting(setOf(Cue.WHO, Cue.HELLO)))
+        assertEquals(Cue.entries.toSet() - Cue.HELLO, Cue.lasting(Cue.entries.toSet()))
+        // Une fois répondu, un simple salut reste tel quel devant le modèle.
+        val salut = Brain.Prepared.of(Cue.of("salut sa va ?")) { Recall.block(emptyList(), cues = it) }
+        assertEquals("[Pour Axo : ${Cue.HELLO.text}]\n[Message de $USER_NAME]\n", salut.memory)
+        assertEquals("", salut.lasting)
+        val fievre = Brain.Prepared.of(Cue.of("il a de la fièvre")) { Recall.block(listOf("Matteo a un chat, Pixel."), cues = it) }
+        assertEquals(fievre.memory, fievre.lasting)
+    }
+
+    @Test
     fun onlyWhatTheMessageSays() {
         assertEquals(setOf(Cue.DISTRESS), Cue.of("je veux plus vivre, je sers a rien"))
-        assertEquals(emptySet<Cue>(), Cue.of("salut sa va ?"))
+        assertEquals(setOf(Cue.HELLO), Cue.of("salut sa va ?"))
+        assertEquals(emptySet<Cue>(), Cue.of("raconte moi une blague"))
     }
 }

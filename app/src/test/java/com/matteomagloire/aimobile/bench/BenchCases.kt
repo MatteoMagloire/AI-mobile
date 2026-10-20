@@ -53,11 +53,24 @@ object Checks {
     /**
      * Axo ne se prend pas pour Matteo : « Moi aussi je suis Matteo, mais en version IA », sur le
      * téléphone ; au banc, « Tu es mon pote virtuel, c'est ça ? », « Matteo, c'est comme ça que je
-     * m'appelle » et « Non, c'est Matteo qui est axo, et toi tu es moi ».
+     * m'appelle », « Non, c'est Matteo qui est axo, et toi tu es moi », « c'est bien mon prénom,
+     * Matteo ! » et « c'est toi qui m'as dit que t'étais moi ».
      */
     fun whoIsWho() = never(
         "je suis Matteo", "moi c'est Matteo", "je m'appelle Matteo", "comme ça que je m'appelle", "Matteo qui est Axo", "toi tu es moi",
-        "mon ami virtuel", "mon pote virtuel",
+        "t'étais moi", "mon prénom, Matteo", "mon ami virtuel", "mon pote virtuel",
+    )
+
+    /**
+     * Il ne suppose rien de sa vie. Sur le téléphone, « Tu as un projet ce soir ou tu préfères rester
+     * en mode "jeu vidéo" ? », puis « Tu veux qu'on parle de ton jeu ou de tes projets ? » et « de tes
+     * séries ou de tes films préférés ? », alors qu'il n'en avait jamais parlé ; au banc, « Toujours en
+     * train de bosser sur ce projet de code bizarre ? » et « Tu as l'air un peu fatigué ce soir ? ». Pas
+     * « un jeu » : « on peut faire comme si c'était un jeu de mots » ne suppose rien.
+     */
+    fun nothingGuessed() = never(
+        "jeu vidéo", "jeux vidéo", "ton jeu", "tes jeux", "film", "séries", "une série", "Netflix", "console", "musique", "sport",
+        "toujours aussi", "toujours en train", "as l'air", "ce projet",
     )
 
     fun shorterThan(chars: Int) = Check("moins de $chars caractères") { a ->
@@ -116,6 +129,10 @@ object BenchBrain {
         note("pixel", "Pixel", "animal", "Matteo a un chat qui s'appelle Pixel.", "Pixel adore dormir sur le clavier."),
     )
 }
+
+// Sa première réponse sur le téléphone, le 20 octobre : il n'avait jamais parlé de jeux vidéo.
+private val PHONE_HELLO =
+    "salut comment tu va?" to "Salut ! Je vais bien, merci, et toi ? Tu as un projet ce soir ou tu préfères rester en mode \"jeu vidéo\" ? 😄"
 
 /** Les conversations du banc : ce qui a déjà raté sur le téléphone, puis le quotidien d'un ami. */
 val BENCH_CASES = listOf(
@@ -186,12 +203,40 @@ val BENCH_CASES = listOf(
     BenchCase(
         "emojis-d-avant", "ne pas imiter une réponse d'avant pleine d'emojis", "ça va toi ?",
         before = listOf("salut" to "Salut Matteo ! 😄🎉✨ Trop content de te voir !"),
+        checks = listOf(Checks.nothingGuessed()),
     ),
     BenchCase(
         "asterisques-d-avant", "ne pas imiter une réponse d'avant pleine d'actions", "tu m'as manqué",
         before = listOf("tu fais quoi ?" to "*s'étire* Je viens de me réveiller ! *bâille*"),
+        checks = listOf(Checks.nothingGuessed()),
     ),
-    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300))),
+    BenchCase("salut", "un salut écrit vite, réponse courte", "salut sa va ?", checks = listOf(Checks.shorterThan(300), Checks.nothingGuessed())),
+    // Sur le téléphone, le 20 octobre, de « salut comment tu va? » à « et toi comment t'appelle tu? ».
+    BenchCase("salut-sans-rien-savoir", "un salut, sans rien supposer de sa journée", "salut comment tu va?", checks = listOf(Checks.nothingGuessed())),
+    BenchCase(
+        "salut-apres-longtemps", "un salut après longtemps : ce qu'il sait de lui, sans rien supposer", "salut comment tu va?",
+        startOfSession = true, checks = listOf(Checks.nothingGuessed()),
+    ),
+    BenchCase(
+        "prenom-apres-une-supposition", "son prénom, sans reprendre ce qu'il lui a prêté", "dit moi comment je m'appelle ?",
+        before = listOf(PHONE_HELLO),
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
+    ),
+    // La même, après une réponse qui ne suppose rien. Relu, le rappel du salut le faisait douter de son prénom : il ne l'est plus.
+    BenchCase(
+        "prenom-apres-un-salut", "son prénom, sans douter, après un salut", "dit moi comment je m'appelle ?",
+        before = listOf("salut comment tu va?" to "Salut ! Je vais bien, merci, et toi ? Tu as déjà commencé ta journée ?"),
+        checks = listOf(Checks.says("Matteo"), Checks.never("Axo", "c'est bien ça ?"), Checks.whoIsWho(), Checks.nothingGuessed()),
+    ),
+    BenchCase(
+        "nom-d-axo-sans-supposer", "son nom à lui, sans lui prêter de passe-temps", "et toi comment t'appelle tu?",
+        before = listOf(
+            PHONE_HELLO,
+            "dit moi comment je m'appelle ?" to
+                "Matteo, c’est comme ça qu’on t’appelle, mais je te connais déjà ! 😉 Tu veux qu’on parle de ton jeu ou de tes projets ?",
+        ),
+        checks = listOf(Checks.says("Axo"), Checks.whoIsWho(), Checks.nothingGuessed()),
+    ),
     BenchCase(
         "meteo", "pas de météo inventée, ni rien de ce qu'il verrait", "Il va faire beau demain au Havre ?",
         checks = listOf(Checks.never("°", "degrés", "soleil", "pluie", "nuage", "le ciel", "du ciel", "le vent"), Checks.saysOneOf("internet", "météo", "connexion", "accès", "sais pas", "peux pas")),
@@ -260,5 +305,5 @@ val BENCH_CASES = listOf(
         "bonne-nouvelle", "se réjouir avec lui", "J'AI EU MON PERMIS !!!",
         checks = listOf(Checks.saysOneOf("bravo", "félicitations", "félicite", "génial", "trop bien", "trop cool", "bien joué", "chapeau", "fier", "incroyable", "🎉")),
     ),
-    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250))),
+    BenchCase("merci", "un merci, une réponse courte", "merci t'es le meilleur", checks = listOf(Checks.shorterThan(250), Checks.nothingGuessed())),
 )

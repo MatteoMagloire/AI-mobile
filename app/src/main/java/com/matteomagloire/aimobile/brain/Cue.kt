@@ -5,8 +5,12 @@ package com.matteomagloire.aimobile.brain
  * personnalité le dit déjà, mais au banc d'Axo il l'oubliait au moment de répondre ; lu juste avant
  * le message, il le fait. Pas pour un texte à écrire : « écris-le en entier, avec l'occasion » le
  * faisait commencer par « Salut mon pote ! », sans plus souhaiter l'anniversaire.
+ *
+ * Il les relit ensuite avec la conversation, sauf ceux lus seulement pour la réponse
+ * ([onlyForTheReply]) : le message est alors réécrit sans eux une fois répondu
+ * (LlamaEngine.rewriteLastExchange).
  */
-enum class Cue(val text: String) {
+enum class Cue(val text: String, val onlyForTheReply: Boolean = false) {
     /** Il va peut-être très mal ([Distress]) : 2 réponses sur 3 lui proposaient d'en parler plus tard. */
     DISTRESS(
         "il va peut-être très mal. Prends-le au sérieux, dis-lui que tu es là pour lui, " +
@@ -35,6 +39,18 @@ enum class Cue(val text: String) {
      * ce rappel, il lui donnait raison 4 ou 5 fois sur 12 ; avec, 11 ou 12 fois.
      */
     WHO("il te rappelle qui est qui : toi, c'est Axo, et lui, c'est $USER_NAME. S'il te corrige, donne-lui raison"),
+
+    /**
+     * Un salut, sans rien d'autre : Axo ne sait rien de sa journée. Sur le téléphone, « salut comment
+     * tu va? » donnait « tu préfères rester en mode "jeu vidéo" ? », qu'il a repris ensuite (« ton
+     * jeu »). Au banc, sans ce rappel, il supposait quelque chose 7 fois sur 12 (« Toujours en train de
+     * bosser sur ce projet de code bizarre ? ») ; avec, jamais en 24 : « Tu as déjà commencé ta journée ? ».
+     * D'autres mots faisaient moins bien : « n'en invente rien » le rendait froid (« je ne sais pas ce
+     * que tu fais aujourd'hui »), « n'invente rien de sa journée » lui faisait raconter la sienne, et
+     * sans interdit (« demande-lui ») il redevinait. Seulement pour la réponse : relu avec la suite, il
+     * faisait douter Axo du prénom de Matteo (« Matteo, c'est bien ça ? » 14 fois sur 24, 2 sans).
+     */
+    HELLO("tu ne sais rien de sa journée : n'en suppose rien, demande-lui", onlyForTheReply = true),
     ;
 
     companion object {
@@ -60,6 +76,19 @@ enum class Cue(val text: String) {
                 "\\b(moi,? c'?est|je suis|je m'?appel+e|c'?est moi) ${TextMatch.fold(USER_NAME)}\\b",
         )
 
+        // Un salut sans rien d'autre : « salut comment tu va? », « ça va toi ? », « coucou Axo » ; pas
+        // « salut, j'ai raté mon permis », ni « ça va pas ».
+        private val HELLO_WORDS = setOf("salut", "slt", "coucou", "cc", "bonjour", "bjr", "bonsoir", "hello", "hey", "yo", "wesh", "re", "va", "vas", "neuf", "forme", "roule")
+        private val SMALL_TALK = HELLO_WORDS + setOf("ca", "sa", "comment", "tu", "toi", "et", "bien", "quoi", "de", "la", "axo")
+
+        private fun saysHello(folded: String): Boolean {
+            val words = folded.split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
+            return words.isNotEmpty() && words.all { it in SMALL_TALK } && words.any { it in HELLO_WORDS }
+        }
+
+        /** Les rappels de [cues] qui restent devant le message une fois la réponse écrite. */
+        fun lasting(cues: Set<Cue>): Set<Cue> = cues.filterNot { it.onlyForTheReply }.toSet()
+
         /** Ce qu'Axo lit avant [message]. */
         fun of(message: String): Set<Cue> {
             val folded = TextMatch.fold(message).replace('’', '\'')
@@ -68,6 +97,7 @@ enum class Cue(val text: String) {
                 if (OFFLINE_SIGNS.containsMatchIn(folded)) add(OFFLINE)
                 if (HEALTH_SIGNS.containsMatchIn(folded)) add(HEALTH)
                 if (WHO_SIGNS.containsMatchIn(folded)) add(WHO)
+                if (saysHello(folded)) add(HELLO)
             }
         }
     }

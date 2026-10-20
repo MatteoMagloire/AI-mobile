@@ -347,14 +347,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 brain.prepare(message, now, recentMemories, startOfSession, s.settings.dormantDays)
             } catch (e: Exception) {
                 // Sans les souvenirs, Axo lit quand même ce qui l'aide à répondre juste (détresse, santé…).
-                Brain.Prepared(Recall.block(emptyList(), cues = Cue.of(message), tuCest = Recall.writesTuCest(message)))
+                Brain.Prepared.of(Cue.of(message)) { Recall.block(emptyList(), cues = it, tuCest = Recall.writesTuCest(message)) }
             }
-            if (prepared.memory.isNotEmpty()) {
-                _state.update { st ->
-                    val m = st.messages.getOrNull(userIndex) ?: return@update st
-                    st.copy(messages = st.messages.toMutableList().apply { set(userIndex, m.copy(memory = prepared.memory)) })
-                }
-            }
+            if (prepared.memory.isNotEmpty()) setMemory(userIndex, prepared.memory)
             prepared.forgetting?.let { f -> updateBrain { it.copy(chip = BrainChip.Forgot(f)) } }
             saveConversation()
             val settings = _state.value.settings
@@ -397,6 +392,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         }
                         val stats = engine.lastStats()
                         replaceLast { it.copy(tokensPerSecond = stats.genTokensPerSecond.toFloat()) }
+                        // Ce qu'Axo ne lisait que pour répondre (un salut…) n'est pas relu ensuite. Si la
+                        // réécriture échoue, le contexte est refait avec les messages : déjà sans.
+                        val reply = _state.value.messages.last()
+                        if (prepared.lasting != prepared.memory && !reply.fromUser && reply.text.isNotEmpty()) {
+                            setMemory(userIndex, prepared.lasting)
+                            if (!engine.rewriteLastExchange(prepared.lasting + message, reply.modelText)) setMemory(userIndex, prepared.memory)
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -421,6 +423,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 // Même arrêtée, la réponse laisse un échange à lire pour le Cerveau.
                 if (failed) openChat() else brain.takeNotes(_state.value.messages)
             }
+        }
+    }
+
+    /** Les souvenirs lus avant le message n° [index] (ChatMessage.memory). */
+    private fun setMemory(index: Int, memory: String) {
+        _state.update { st ->
+            val m = st.messages.getOrNull(index) ?: return@update st
+            st.copy(messages = st.messages.toMutableList().apply { set(index, m.copy(memory = memory)) })
         }
     }
 

@@ -12,6 +12,7 @@ internal object LlamaNative {
     external fun startConversation(systemPrompt: String): Int
     external fun addHistoryMessage(fromUser: Boolean, text: String): Int
     external fun sendUserMessage(text: String, nPredict: Int): Int
+    external fun rewriteLastExchange(userText: String, replyText: String): Int
     external fun nextToken(): String?
     external fun stopGeneration()
     external fun saveSession(path: String): Long

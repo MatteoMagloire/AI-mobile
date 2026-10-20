@@ -150,8 +150,18 @@ class Brain(
         }
     }
 
-    /** Ce que le modèle lit avant le message, et ce qu'un « oublie… » a retiré (pour « Annuler »). */
-    data class Prepared(val memory: String, val forgetting: Forgetting? = null)
+    /**
+     * Ce que le modèle lit avant le message ([memory]), ce qui en reste devant lui une fois la réponse
+     * écrite ([lasting] : sans les rappels lus seulement pour répondre, [Cue.onlyForTheReply]), et ce
+     * qu'un « oublie… » a retiré (pour « Annuler »).
+     */
+    data class Prepared(val memory: String, val forgetting: Forgetting? = null, val lasting: String = memory) {
+        companion object {
+            /** Le bloc de [block] avec tous les rappels de [cues], puis sans ceux lus seulement pour répondre. */
+            fun of(cues: Set<Cue>, forgetting: Forgetting? = null, block: (Set<Cue>) -> String) =
+                Prepared(block(cues), forgetting, block(Cue.lasting(cues)))
+        }
+    }
 
     /**
      * Prépare un message avant qu'il parte (rapide, sans le modèle) : fait un « oublie… », et choisit
@@ -171,7 +181,9 @@ class Brain(
         val command = BrainCommands.parse(message)
         if (command is BrainCommand.Forget) {
             val forgetting = store.forget(command.what, time, NoteTaker.excerpt(message))
-            return Prepared(Recall.block(emptyList(), forgotten = forgetting.texts, nothingToForget = forgetting.isEmpty, cues = cues), forgetting)
+            return Prepared.of(cues, forgetting) {
+                Recall.block(emptyList(), forgotten = forgetting.texts, nothingToForget = forgetting.isEmpty, cues = it)
+            }
         }
         val notes = store.notes.value
         val today = LocalDate.now()
@@ -181,7 +193,7 @@ class Brain(
         // Les notes dont Axo se sert restent actives, ou se réveillent ; sans retarder la réponse.
         val used = (r.kept + r.followed.map { it.note.id }).filter { id -> notes.none { it.id == id && it.isMe } }.distinct()
         if (used.isNotEmpty()) scope.launch { store.markUsed(used) }
-        return Prepared(Recall.block(r.facts, remember = command is BrainCommand.Remember, cues = cues, tuCest = Recall.writesTuCest(message)))
+        return Prepared.of(cues) { Recall.block(r.facts, remember = command is BrainCommand.Remember, cues = it, tuCest = Recall.writesTuCest(message)) }
     }
 
     /** Montre à l'écran ce qu'Axo vient de faire avant de répondre : chercher, lire, suivre un lien, réveiller. */
